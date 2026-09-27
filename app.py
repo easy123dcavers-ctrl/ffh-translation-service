@@ -20,7 +20,12 @@ TARGETS = {
     "fr": "French",
     "ja": "Japanese",
 }
-REQUIRED = {("en", code) for code in TARGETS}
+CONFIGURED_TARGET = os.environ.get("FFH_TARGET_LANGUAGE", "es").strip().lower()
+
+if CONFIGURED_TARGET not in TARGETS:
+    raise RuntimeError(
+        f"Unsupported FFH_TARGET_LANGUAGE: {CONFIGURED_TARGET}"
+    )
 
 
 def installed_pairs():
@@ -30,55 +35,56 @@ def installed_pairs():
     }
 
 
-def missing_pairs():
-    return sorted(REQUIRED - installed_pairs())
+def configured_pair():
+    return (SOURCE, CONFIGURED_TARGET)
+
+
+def configured_model_installed():
+    return configured_pair() in installed_pairs()
 
 
 @app.get("/")
 def root():
-    missing = missing_pairs()
+    installed = configured_model_installed()
 
     return jsonify({
         "service": SERVICE_NAME,
-        "status": "ok" if not missing else "degraded",
+        "status": "ok" if installed else "degraded",
         "source": SOURCE,
-        "targets": sorted(TARGETS),
-        "missing_models": [
-            f"{source}->{target}"
-            for source, target in missing
+        "configured_target": CONFIGURED_TARGET,
+        "configured_target_name": TARGETS[CONFIGURED_TARGET],
+        "available_targets": [
+            CONFIGURED_TARGET
+        ] if installed else [],
+        "missing_models": [] if installed else [
+            f"{SOURCE}->{CONFIGURED_TARGET}"
         ],
     })
 
 
 @app.get("/health")
 def health():
-    missing = missing_pairs()
-
-    if missing:
+    if not configured_model_installed():
         return jsonify({
             "status": "degraded",
             "service": SERVICE_NAME,
+            "configured_target": CONFIGURED_TARGET,
             "missing_models": [
-                f"{source}->{target}"
-                for source, target in missing
+                f"{SOURCE}->{CONFIGURED_TARGET}"
             ],
         }), 503
 
     return jsonify({
         "status": "ok",
         "service": SERVICE_NAME,
+        "configured_target": CONFIGURED_TARGET,
     })
 
 
 @app.get("/languages")
 def languages():
-    pairs = installed_pairs()
-
-    targets = sorted(
-        code
-        for code in TARGETS
-        if (SOURCE, code) in pairs
-    )
+    installed = configured_model_installed()
+    targets = [CONFIGURED_TARGET] if installed else []
 
     return jsonify([
         {
@@ -86,15 +92,13 @@ def languages():
             "name": "English",
             "targets": targets,
         },
-        *[
+        *([
             {
-                "code": code,
-                "name": name,
+                "code": CONFIGURED_TARGET,
+                "name": TARGETS[CONFIGURED_TARGET],
                 "targets": [],
             }
-            for code, name in TARGETS.items()
-            if (SOURCE, code) in pairs
-        ],
+        ] if installed else []),
     ])
 
 
@@ -116,22 +120,22 @@ def translate():
             "error": "FFH currently supports source=en only"
         }), 400
 
-    if target not in TARGETS:
+    if target != CONFIGURED_TARGET:
         return jsonify({
-            "error": "unsupported target language",
-            "supported_targets": sorted(TARGETS),
+            "error": "unsupported target language for this service instance",
+            "configured_target": CONFIGURED_TARGET,
         }), 400
 
-    if (source, target) not in installed_pairs():
+    if not configured_model_installed():
         return jsonify({
-            "error": f"model not installed: {source}->{target}"
+            "error": f"model not installed: {SOURCE}->{CONFIGURED_TARGET}"
         }), 503
 
     try:
         translated = argostranslate.translate.translate(
             q,
-            source,
-            target,
+            SOURCE,
+            CONFIGURED_TARGET,
         )
     except Exception:
         app.logger.exception("Argos translation failed")
