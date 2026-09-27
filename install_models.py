@@ -1,4 +1,4 @@
-"""Install and verify only the three Argos models FFH currently needs."""
+"""Install and verify exactly one Argos model for this FFH service."""
 import os
 from pathlib import Path
 
@@ -10,7 +10,14 @@ os.environ.setdefault("ARGOS_DEVICE_TYPE", "cpu")
 
 import argostranslate.package
 
-REQUIRED = (("en", "es"), ("en", "fr"), ("en", "ja"))
+SOURCE = "en"
+TARGET = os.environ.get("FFH_TARGET_LANGUAGE", "es").strip().lower()
+ALLOWED = {"es", "fr", "ja"}
+
+if TARGET not in ALLOWED:
+    raise RuntimeError(
+        f"Unsupported FFH_TARGET_LANGUAGE: {TARGET}"
+    )
 
 
 def main():
@@ -19,47 +26,46 @@ def main():
     argostranslate.package.update_package_index()
     available = argostranslate.package.get_available_packages()
 
-    for source, target in REQUIRED:
-        installed = {
-            (p.from_code, p.to_code)
-            for p in argostranslate.package.get_installed_packages()
-        }
+    installed = {
+        (p.from_code, p.to_code)
+        for p in argostranslate.package.get_installed_packages()
+    }
 
-        if (source, target) in installed:
-            print(f"Already installed {source}->{target}")
-            continue
+    pair = (SOURCE, TARGET)
 
+    if pair not in installed:
         package = next(
             (
                 p for p in available
-                if p.from_code == source and p.to_code == target
+                if p.from_code == SOURCE
+                and p.to_code == TARGET
             ),
             None,
         )
 
         if package is None:
             raise RuntimeError(
-                f"No Argos model available for {source}->{target}"
+                f"No Argos model available for {SOURCE}->{TARGET}"
             )
 
-        print(f"Installing {source}->{target}: {package}")
-        argostranslate.package.install_from_path(package.download())
+        print(f"Installing {SOURCE}->{TARGET}: {package}")
+        argostranslate.package.install_from_path(
+            package.download()
+        )
 
     installed = {
         (p.from_code, p.to_code)
         for p in argostranslate.package.get_installed_packages()
     }
 
-    missing = [pair for pair in REQUIRED if pair not in installed]
-
-    if missing:
+    if pair not in installed:
         raise RuntimeError(
-            f"Argos model verification failed; missing: {missing}"
+            f"Argos model verification failed; missing: {pair}"
         )
 
     print(
-        f"FFH Argos models verified in {MODEL_DIR}: "
-        f"{sorted(installed)}"
+        f"FFH Argos model verified in {MODEL_DIR}: "
+        f"{SOURCE}->{TARGET}"
     )
 
 
