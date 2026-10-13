@@ -69,7 +69,7 @@ def languages():
 def validate_target(source, target):
     if source != SOURCE:
         return jsonify({"error":"FFH currently supports source=en only"}), 400
-    if target not in (supported_targets() if MULTILINGUAL else [CONFIGURED_TARGET]):
+    if target not in (supported_targets() if MULTILINGUAL else ([CONFIGURED_TARGET] if configured_model_installed() else [])):
         return jsonify({"error":"unsupported target language for this service instance",
                         "configured_target":CONFIGURED_TARGET, "available_targets":supported_targets()}), 400
     if not configured_model_installed():
@@ -120,7 +120,7 @@ def translate_batch():
         except Exception:
             app.logger.exception("Argos batch item failed")
             results.append({"id":item_id,"ok":False,"error":"translation failed"})
-    return jsonify({"target":CONFIGURED_TARGET,"count":len(results),"results":results})
+    return jsonify({"target":target,"count":len(results),"results":results})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "10000"))
