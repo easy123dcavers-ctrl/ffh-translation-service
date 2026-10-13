@@ -15,8 +15,9 @@ app = Flask(__name__)
 
 SERVICE_NAME = "ffh-translation-service"
 SOURCE = "en"
-TARGETS = {"es": "Spanish", "fr": "French", "ja": "Japanese"}
+TARGETS = {"es": "Spanish", "fr": "French", "ja": "Japanese", "de": "German", "ar": "Arabic", "tl": "Filipino", "ko": "Korean", "vi": "Vietnamese", "zh": "Simplified Chinese"}
 CONFIGURED_TARGET = os.environ.get("FFH_TARGET_LANGUAGE", "es").strip().lower()
+MULTILINGUAL = os.environ.get("FFH_MULTILINGUAL", "false").lower() == "true"
 MAX_BATCH_ITEMS = 25
 
 if CONFIGURED_TARGET not in TARGETS:
@@ -28,11 +29,14 @@ def installed_pairs():
 def configured_pair():
     return (SOURCE, CONFIGURED_TARGET)
 
-def configured_model_installed():
-    return configured_pair() in installed_pairs()
+def supported_targets():
+    return sorted({p.to_code for p in argostranslate.package.get_installed_packages() if p.from_code == SOURCE})
 
-def translate_text(q):
-    return argostranslate.translate.translate(q, SOURCE, CONFIGURED_TARGET)
+def configured_model_installed():
+    return bool(supported_targets()) if MULTILINGUAL else configured_pair() in installed_pairs()
+
+def translate_text(q, target=None):
+    return argostranslate.translate.translate(q, SOURCE, target or CONFIGURED_TARGET)
 
 @app.get("/")
 def root():
@@ -43,7 +47,7 @@ def root():
         "source": SOURCE,
         "configured_target": CONFIGURED_TARGET,
         "configured_target_name": TARGETS[CONFIGURED_TARGET],
-        "available_targets": [CONFIGURED_TARGET] if installed else [],
+        "available_targets": supported_targets() if MULTILINGUAL else ([CONFIGURED_TARGET] if installed else []),
         "missing_models": [] if installed else [f"{SOURCE}->{CONFIGURED_TARGET}"],
         "max_batch_items": MAX_BATCH_ITEMS,
     })
@@ -58,16 +62,16 @@ def health():
 @app.get("/languages")
 def languages():
     installed = configured_model_installed()
-    targets = [CONFIGURED_TARGET] if installed else []
+    targets = supported_targets() if MULTILINGUAL else ([CONFIGURED_TARGET] if installed else [])
     return jsonify([{"code":SOURCE,"name":"English","targets":targets},
-                    *([{"code":CONFIGURED_TARGET,"name":TARGETS[CONFIGURED_TARGET],"targets":[]}] if installed else [])])
+                    *([{"code":t,"name":TARGETS.get(t,t),"targets":[]} for t in targets])])
 
 def validate_target(source, target):
     if source != SOURCE:
         return jsonify({"error":"FFH currently supports source=en only"}), 400
-    if target != CONFIGURED_TARGET:
+    if target not in (supported_targets() if MULTILINGUAL else [CONFIGURED_TARGET]):
         return jsonify({"error":"unsupported target language for this service instance",
-                        "configured_target":CONFIGURED_TARGET}), 400
+                        "configured_target":CONFIGURED_TARGET, "available_targets":supported_targets()}), 400
     if not configured_model_installed():
         return jsonify({"error":f"model not installed: {SOURCE}->{CONFIGURED_TARGET}"}), 503
     return None
@@ -83,7 +87,7 @@ def translate():
     bad = validate_target(source, target)
     if bad: return bad
     try:
-        translated = translate_text(q)
+        translated = translate_text(q, target)
     except Exception:
         app.logger.exception("Argos translation failed")
         return jsonify({"error":"translation failed"}), 500
@@ -112,7 +116,7 @@ def translate_batch():
             results.append({"id":item_id,"ok":False,"error":"q must be a non-empty string"})
             continue
         try:
-            results.append({"id":item_id,"ok":True,"translatedText":translate_text(q)})
+            results.append({"id":item_id,"ok":True,"translatedText":translate_text(q, target)})
         except Exception:
             app.logger.exception("Argos batch item failed")
             results.append({"id":item_id,"ok":False,"error":"translation failed"})
