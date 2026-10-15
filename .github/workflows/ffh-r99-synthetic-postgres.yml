@@ -1,0 +1,140 @@
+name: FFH R99 safe PostgreSQL + real Argos synthetic test
+on:
+  push:
+    branches: [ffh-r99-synthetic-postgres-20261016]
+    paths: [.github/workflows/ffh-r99-synthetic-postgres.yml]
+permissions:
+  contents: read
+  statuses: write
+jobs:
+  synthetic-postgres-real-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ephemeral-only
+          POSTGRES_DB: r99_synthetic
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d r99_synthetic"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      PG_CONN: postgresql://postgres:ephemeral-only@localhost:5432/r99_synthetic
+      ARGOS_DEVICE_TYPE: cpu
+      OMP_NUM_THREADS: "1"
+    steps:
+      - name: Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Free dependencies for disposable test
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]>=3.2,<4' argostranslate==1.11.0
+      - name: R99 PostgreSQL genuine-model synthetic approval pilot
+        id: pilot
+        shell: bash
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, re, time
+          import psycopg
+          import argostranslate.package as pkg
+          import argostranslate.translate as tx
+          con=psycopg.connect(os.environ['PG_CONN'],autocommit=True)
+          con.execute('''
+          CREATE TABLE languages(code text PRIMARY KEY,enrolled boolean NOT NULL, public_enabled boolean NOT NULL,model_verified boolean NOT NULL);
+          CREATE TABLE sources(hash text PRIMARY KEY, english text NOT NULL,gate text NOT NULL,is_safety boolean NOT NULL,protected boolean NOT NULL);
+          CREATE TABLE translations(source_hash text, lang text, translated text NOT NULL,status text NOT NULL CHECK(status IN ('provisional','reviewed')),PRIMARY KEY(source_hash,lang));
+          CREATE TABLE jobs(source_hash text,lang text,status text NOT NULL DEFAULT 'pending',PRIMARY KEY(source_hash,lang));
+          ''')
+          con.execute("INSERT INTO languages VALUES ('es',true,true,true),('fr',true,true,false),('it',false,false,false),('hi',false,false,false)")
+          passed=0
+          def check(cond,label):
+              global passed
+              assert cond,label
+              passed+=1
+              print('R99_PASS',label)
+          def one(sql,*params):return con.execute(sql,params).fetchone()[0]
+          def enroll(lang):
+              con.execute('UPDATE languages SET enrolled=true WHERE code=%s',(lang,))
+              con.execute("INSERT INTO jobs(source_hash,lang,status) SELECT s.hash,%s,'pending' FROM sources s WHERE s.gate='normal' AND NOT s.is_safety AND NOT s.protected AND NOT EXISTS(SELECT 1 FROM translations t WHERE t.source_hash=s.hash AND t.lang=%s) ON CONFLICT DO NOTHING",(lang,lang))
+          def register(text,gate='normal',is_safety=False,protected=False):
+              h=hashlib.md5(text.encode()).hexdigest()
+              con.execute('INSERT INTO sources VALUES (%s,%s,%s,%s,%s)',(h,text,gate,is_safety,protected))
+              if gate=='normal' and not is_safety and not protected:
+                  con.execute("INSERT INTO jobs(source_hash,lang,status) SELECT %s,code,'pending' FROM languages WHERE enrolled AND NOT EXISTS(SELECT 1 FROM translations t WHERE t.source_hash=%s AND t.lang=code) ON CONFLICT DO NOTHING",(h,h))
+              return h
+          reviewed='The vegetables are in the jar.'
+          reviewed_hash=hashlib.md5(reviewed.encode()).hexdigest()
+          con.execute("INSERT INTO translations VALUES(%s,'es','Las verduras están en el frasco.','reviewed')",(reviewed_hash,))
+          source='Add 50 g of salt to 1 L of water.'
+          h=register(source)
+          rh=register(reviewed)
+          blocked=register('Dangerous bottle pressure requires separate safety review.','safety_review_required',True)
+          override=register('This synthetic paragraph is withheld by source override.','normal',False,True)
+          check(one('SELECT count(*) FROM jobs')==3,'autoqueue created only missing ordinary language pairs')
+          check(one('SELECT count(*) FROM jobs WHERE source_hash=%s',blocked)==0,'safety source never queued')
+          check(one('SELECT count(*) FROM jobs WHERE source_hash=%s',override)==0,'override source never queued')
+          check(one("SELECT count(*) FROM jobs WHERE source_hash=%s AND lang='es'",rh)==0,'existing reviewed Spanish reused')
+          check(one("SELECT count(*) FROM jobs WHERE lang='it'")==0,'planned Italian initially inactive')
+          enroll('it')
+          check(one("SELECT count(*) FROM jobs WHERE lang='it'")==2,'Italian enrolled and backlog prepared')
+          check(one("SELECT public_enabled FROM languages WHERE code='it'") is False,'enrolling Italian did not expose it to visitors')
+          check(one("SELECT count(*) FROM jobs WHERE lang='hi'")==0,'other future languages remain untouched')
+          check(one("SELECT count(*) FROM translations WHERE status='provisional'")==0,'Staff draft queue starts empty')
+          pkg.update_package_index()
+          model=next((p for p in pkg.get_available_packages() if p.from_code=='en' and p.to_code=='es'),None)
+          check(model is not None,'official English-Spanish Argos model exists')
+          pkg.install_from_path(model.download())
+          t0=time.perf_counter()
+          translated=tx.translate(source,'en','es')
+          seconds=round(time.perf_counter()-t0,3)
+          number_pattern=r'(?<![A-Za-z])\\d+(?:[.,]\\d+)?'
+          nums=lambda text: sorted(re.findall(number_pattern,text))
+          check(bool(translated.strip()) and translated.strip()!=source,'real Argos returned nonempty Spanish draft')
+          check(nums(source)==nums(translated),'real draft preserved numerals')
+          con.execute("UPDATE jobs SET status='processing' WHERE source_hash=%s AND lang='es' AND status='pending'",(h,))
+          check(one("SELECT status FROM jobs WHERE source_hash=%s AND lang='es'",h)=='processing','worker safely claimed pending job')
+          con.execute("INSERT INTO translations VALUES(%s,'es',%s,'provisional')",(h,translated))
+          con.execute("UPDATE jobs SET status='completed' WHERE source_hash=%s AND lang='es'",(h,))
+          def staff_queue(lang,role):
+              if role not in ('moderator','admin','owner'): raise PermissionError('staff only')
+              return con.execute("SELECT s.english,t.translated FROM translations t JOIN sources s ON s.hash=t.source_hash WHERE t.lang=%s AND t.status='provisional' AND s.gate='normal' AND NOT s.is_safety AND NOT s.protected",(lang,)).fetchall()
+          public=lambda lang: con.execute("SELECT s.english,t.translated FROM translations t JOIN sources s ON s.hash=t.source_hash WHERE t.lang=%s AND t.status='reviewed' AND s.gate='normal' AND NOT s.is_safety AND NOT s.protected",(lang,)).fetchall()
+          check(len(staff_queue('es','owner'))==1,'real draft visible to Staff')
+          check(len(public('es'))==1,'provisional draft invisible publicly; prior reviewed stays visible')
+          denied=False
+          try: staff_queue('es','guest')
+          except PermissionError: denied=True
+          check(denied,'nonstaff cannot use simulated approval queue')
+          check(one("SELECT translated FROM translations WHERE source_hash=%s AND lang='es'",rh)=='Las verduras están en el frasco.','existing reviewed Spanish preserved byte for byte')
+          con.execute("UPDATE translations SET status='reviewed' WHERE source_hash=%s AND lang='es' AND status='provisional'",(h,))
+          check(len(staff_queue('es','owner'))==0,'simulated human approval removes draft from Staff queue')
+          check(len(public('es'))==2,'only approved ordinary text now public eligible')
+          check(one('SELECT count(*) FROM translations WHERE source_hash IN (%s,%s)',blocked,override)==0,'protected content still has no translated rows')
+          print('R99_REAL_TRANSLATION',json.dumps({'english':source,'spanish_draft':translated,'model_seconds':seconds},ensure_ascii=False))
+          print('R99_SUMMARY',json.dumps({'mode':'isolated clean-room PostgreSQL synthetic schema','real_model':'Argos en-es','checks':passed,'provisional_drafts':1,'simulated_approvals':1,'production_writes':0,'FFH_private_data':0,'model_seconds':seconds}))
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+              f.write(f'checks={passed}\\n')
+              f.write(f'draft=1\\n')
+              f.write(f'model_seconds={seconds}\\n')
+          PY
+      - name: Publish synthetic benchmark status to test commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHECK_COUNT: ${{ steps.pilot.outputs.checks }}
+          MODEL_SECONDS: ${{ steps.pilot.outputs.model_seconds }}
+          JOB_STATUS: ${{ job.status }}
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json,os,urllib.request
+          state='success' if os.getenv('JOB_STATUS')=='success' else 'failure'
+          c=os.getenv('CHECK_COUNT') or '0'
+          seconds=os.getenv('MODEL_SECONDS') or 'not_measured'
+          context=f'ffh/r99/ephemeral-postgres-{c}checks-1draft-{seconds}s'
+          payload=json.dumps({'state':state,'context':context,'description':'real Argos + synthetic PG, no production writes'}).encode()
+          req=urllib.request.Request('https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/statuses/'+os.environ['GITHUB_SHA'],data=payload,method='POST',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json','Content-Type':'application/json','User-Agent':'ffh-r99-isolated-test'})
+          with urllib.request.urlopen(req,timeout=20) as r: print('Synthetic pilot commit status:',r.status)
+          PY
