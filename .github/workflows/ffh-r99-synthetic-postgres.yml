@@ -89,7 +89,7 @@ jobs:
           t0=time.perf_counter()
           translated=tx.translate(source,'en','es')
           seconds=round(time.perf_counter()-t0,3)
-          number_pattern=r'(?<![A-Za-z])\\d+(?:[.,]\\d+)?'
+          number_pattern=r'(?<![A-Za-z])\d+(?:[.,]\d+)?'
           nums=lambda text: sorted(re.findall(number_pattern,text))
           check(bool(translated.strip()) and translated.strip()!=source,'real Argos returned nonempty Spanish draft')
           check(nums(source)==nums(translated),'real draft preserved numerals')
@@ -115,9 +115,9 @@ jobs:
           print('R99_REAL_TRANSLATION',json.dumps({'english':source,'spanish_draft':translated,'model_seconds':seconds},ensure_ascii=False))
           print('R99_SUMMARY',json.dumps({'mode':'isolated clean-room PostgreSQL synthetic schema','real_model':'Argos en-es','checks':passed,'provisional_drafts':1,'simulated_approvals':1,'production_writes':0,'FFH_private_data':0,'model_seconds':seconds}))
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:
-              f.write(f'checks={passed}\\n')
-              f.write(f'draft=1\\n')
-              f.write(f'model_seconds={seconds}\\n')
+              f.write(f'checks={passed}\n')
+              f.write(f'draft=1\n')
+              f.write(f'model_seconds={seconds}\n')
           PY
       - name: Publish synthetic benchmark status to test commit
         if: always()
