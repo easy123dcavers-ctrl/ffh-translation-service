@@ -1,0 +1,33 @@
+name: FFH R100 worker A isolated synthetic translation benchmark
+on:
+  push:
+    branches: [ffh-r100-isolated-two-account-test-20261016]
+    paths: [.github/workflows/ffh-r100-synthetic-shard-a.yml]
+permissions:
+  contents: read
+jobs:
+  r100-worker-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      ARGOS_DEVICE_TYPE: cpu
+      OMP_NUM_THREADS: '1'
+    steps:
+      - name: Checkout public test branch
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned isolated-test translator
+        run: python -m pip install --disable-pip-version-check argostranslate==1.11.0
+      - name: Translate exactly 50 invented benchmark strings, first shard
+        run: python tests/r100_synthetic_shard.py --shard-index 0 --target es
+      - name: Upload synthetic-only performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r100-worker-a-synthetic-report
+          path: r100-output/
+          if-no-files-found: warn
+          retention-days: 3
