@@ -39,11 +39,26 @@ jobs:
           print('MODEL_META', json.dumps({'source':'en','target':'es','version':match.package_version},sort_keys=True))
           package.install_from_path(match.download())
           cases = [
-              'Add 50 g of salt to 1 L of water.',
-              'The vegetables are in the jar.',
-              'Close the lid gently and label the container.',
-              'Stir the mixture once a day.',
-              'This recipe uses 5% salt by weight.'
+              "Add 50 g of salt to 1 L of water.",
+              "The vegetables are in the jar.",
+              "Close the lid gently and label the container.",
+              "Stir the mixture once a day.",
+              "This recipe uses 5% salt by weight.",
+              "Wash the vegetables and drain them.",
+              "Cut the carrots into thin slices.",
+              "Place 1 kg of cabbage into a bowl.",
+              "Measure 500 mL of water.",
+              "Add 20 g of sugar to the mixture.",
+              "Record the date in your notebook.",
+              "Use 3 clean jars for this experiment.",
+              "The brine is cloudy this morning.",
+              "The liquid is near the top of the container.",
+              "Fresh ginger has a strong aroma.",
+              "Open the recipe library on your phone.",
+              "This article has 4 short sections.",
+              "Keep the ingredients in separate bowls.",
+              "The mixture has a sour flavour.",
+              "Label each sample with its number.",
           ]
           accepted = 0
           held = 0
@@ -65,7 +80,7 @@ jobs:
           assert accepted+held == len(cases)
           assert accepted >= 1, 'All drafts failed mechanical QA'
           with open(__import__('os').environ['GITHUB_OUTPUT'],'a') as fd:
-              fd.write(f'summary=5 real model cases; {accepted} candidate; {held} held; {round(time.perf_counter()-started,1)}s\\n')
+              fd.write(f'summary={len(cases)} real-model sentences; {accepted} candidate; {held} held; {round(time.perf_counter()-started,1)}s\\n')
           PY
       - name: Report public synthetic test status to test commit
         if: always()
@@ -78,7 +93,7 @@ jobs:
           import json, os, urllib.request
           state = 'success' if os.environ['JOB_RESULT'] == 'success' else 'failure'
           detail = os.environ.get('PROOF_SUMMARY','').strip() or 'model proof could not finish'
-          payload = json.dumps({'state':state,'context':'ffh/r98-real-argos-synthetic',
+          payload = json.dumps({'state':state,'context':'ffh/r98-benchmark/'+detail.replace(' ','_').replace(';','_')[:80],
                                 'description':detail[:130]}).encode()
           url = 'https://api.github.com/repos/'+os.environ['GITHUB_REPOSITORY']+'/statuses/'+os.environ['GITHUB_SHA']
           req = urllib.request.Request(url,data=payload,method='POST',headers={
