@@ -167,7 +167,7 @@ def translate_batch():
 def guarded_input_size_error():
     """Do not read potentially unbounded request bodies."""
     if request.content_length is None:
-        return jsonify({"error": "content-length required"}), 411
+        return jsonify({"error": "request body must be a JSON object"}), 400
     if request.content_length > MAX_GUARDED_BODY_BYTES:
         return jsonify({"error": "request body too large"}), 413
     return None
