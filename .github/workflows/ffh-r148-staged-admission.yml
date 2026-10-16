@@ -1,0 +1,39 @@
+name: FFH R148 hosted HMAC receipt and no-model held admission regression
+on:
+  push:
+    branches: [ffh-r148-hosted-durable-admission-20261017]
+    paths: [.github/workflows/ffh-r148-staged-admission.yml]
+permissions:
+  contents: read
+jobs:
+  isolated-hosted-negative:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify isolation and no-secret backend changes
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r148-hosted-durable-admission-20261017
+          python -m py_compile r148/https_tests.py r147/pages_tests.py
+      - name: Run R147 and R148 static plus live signed-Auth negative tests
+        run: |
+          set -euo pipefail
+          python -m unittest r147.pages_tests r148.https_tests -v 2>&1 | tee r148-qa.log
+          grep -E 'Ran 26 tests' r148-qa.log
+          grep -E '^OK$' r148-qa.log
+          echo R148_STAGING_ONLY_26_NEGATIVE_AND_STATIC_PASS_NO_TRANSLATOR
+      - name: Preserve evidence and exact tested source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r148-staging-hmac-admission-evidence
+          path: |
+            r148-qa.log
+            docs/
+            r148/
+          retention-days: 7
+          if-no-files-found: warn
