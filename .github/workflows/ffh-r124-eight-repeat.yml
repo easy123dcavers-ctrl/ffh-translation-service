@@ -1,0 +1,78 @@
+name: FFH R124 independent repeat eight target 20pct gate
+on:
+  push:
+    branches: [ffh-r124-eight-language-20pct-20261016]
+    paths: [.github/workflows/ffh-r124-eight-repeat.yml]
+permissions:
+  contents: read
+jobs:
+  second-cold-restart-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - target: es
+            batch: 1
+            beam: 4
+          - target: fr
+            batch: 8
+            beam: 4
+          - target: ja
+            batch: 8
+            beam: 4
+          - target: ar
+            batch: 8
+            beam: 4
+          - target: tl
+            batch: 1
+            beam: 4
+          - target: ko
+            batch: 1
+            beam: 4
+          - target: vi
+            batch: 8
+            beam: 4
+          - target: zh
+            batch: 8
+            beam: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Recheck exact 512MiB 20pct resource threshold and runner syntax
+        run: |
+          python -m py_compile tests/r124_eight_language_gateway.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Get pinned Argos upstream source for independent second image
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build second fresh installed and observed-model-tree-matching target image
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
+            --build-arg FFH_TEST_BATCH=${{ matrix.batch }} \
+            --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
+            --tag ffh-r124-repeat-${{ matrix.target }} --file tests/r124.Dockerfile .
+      - name: Full independent cold 512MiB four-lifecycle guarded test, 20pct minimum
+        run: |
+          mkdir -p r124-repeat-${{ matrix.target }}
+          PRIVATE_TEST_BEARER="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$PRIVATE_TEST_BEARER" \
+            --volume "$PWD/r124-repeat-${{ matrix.target }}:/srv/ffh/r118-output" \
+            ffh-r124-repeat-${{ matrix.target }}
+          unset PRIVATE_TEST_BEARER
+      - name: Archive raw synthetic evidence whether pass or failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r124-repeat-20pct-${{ matrix.target }}
+          path: r124-repeat-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 5
