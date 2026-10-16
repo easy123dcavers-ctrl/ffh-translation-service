@@ -1,0 +1,107 @@
+name: FFH R129 disposable 30min nine-model 0.1CPU endurance
+on:
+  push:
+    branches: [ffh-r129-disposable-endurance-20261017]
+    paths: [.github/workflows/ffh-r129-nine-model-endurance.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r129-disposable-nine-model
+  cancel-in-progress: false
+jobs:
+  nine-language-real-endurance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Confirm isolated branch, original model test and source pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ffh-r129-disposable-endurance-20261017'
+          test "$(git hash-object tests/r125f_bounded_switch.py)" = 'a73832312115cc02c019cb1fa2e8edd457c7654b'
+          python -m py_compile r129/prepare_endurance.py
+          python -m unittest discover -s tests -p test_r125_router_contract.py -v
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Verify upstream Argos source and lightweight dependency
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = '63b84ecb46c740c7a7c066d58636434d3e893ebf'
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Generate 30min runner and disposable Dockerfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m r129.prepare_endurance tests/r125f_bounded_switch.py tests/r129_endurance.py
+          python -m py_compile tests/r129_endurance.py
+          python - <<'PY'
+          from pathlib import Path
+          p = Path("tests/r125f.Dockerfile")
+          content = p.read_text()
+          a = "COPY tests/r125f_bounded_switch.py tests/r125f_bounded_switch.py"
+          b = 'CMD ["python", "tests/r125f_bounded_switch.py"]'
+          assert content.count(a) == 1 and content.count(b) == 1, "Docker source changed; stop"
+          content = content.replace(a, "COPY tests/r129_endurance.py tests/r129_endurance.py")
+          content = content.replace(b, 'CMD ["python", "tests/r129_endurance.py"]')
+          Path("tests/r129.Dockerfile").write_text(content)
+          PY
+      - name: Build nine pinned real-model trees on disk
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag ffh-r129-disposable --file tests/r129.Dockerfile .
+          docker image inspect ffh-r129-disposable --format 'R129_UNCOMPRESSED_BYTES {{.Size}}'
+      - name: Real 512MiB 0.1CPU 1800s multi-circuit endurance
+        shell: bash
+        timeout-minutes: 75
+        run: |
+          set -euo pipefail
+          mkdir -p r129-real-output
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          trap 'unset TOKEN' EXIT
+          docker run --rm --network none \
+            --memory 512m --memory-swap 512m --cpus 0.1 --pids-limit 128 \
+            --security-opt no-new-privileges --cap-drop ALL \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env R125F_MAX_BATCHES=2 \
+            --volume "$PWD/r129-real-output:/srv/ffh/r125-output" \
+            ffh-r129-disposable
+      - name: Independently enforce final acceptance gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path("r129-real-output/summary.json")
+          s = json.loads(p.read_text())
+          assert s["status"] == "PASS_BOUNDED_NINE_MODEL_SWITCH_RESOURCE_ONLY", s.get("status")
+          assert s["wall_seconds"] >= 1800
+          assert s["completed_circuits"] >= 2
+          assert s["oom_kills"] == 0
+          assert s["memory_peak_mib"] <= 409.6
+          assert s["headroom_pct"] >= 20
+          assert s["cpu_max"].split() == ["10000","100000"], s["cpu_max"]
+          assert s["sigkill_unknown_verified"] == 1
+          assert s["max_batches_per_stage"] == 2
+          assert len(s["rounds"]) >= 18
+          assert sum(r["target"] == "de" for r in s["rounds"]) >= 2
+          assert all(1 <= r["batches"] <= 2 for r in s["rounds"])
+          assert all(r["worker_boots"] == 1 for r in s["rounds"])
+          assert s["production_writes"] == 0 and s["human_approvals"] == 0
+          print("R129_ACCEPTANCE_PASS", {k:s[k] for k in ("wall_seconds","completed_circuits","memory_peak_mib","headroom_pct","oom_kills","sigkill_unknown_verified")})
+          PY
+      - name: Preserve real-model evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r129-disposable-real-endurance-evidence
+          path: |
+            r129-real-output/
+          if-no-files-found: warn
+          retention-days: 3
