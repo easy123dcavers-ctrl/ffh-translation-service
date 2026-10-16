@@ -1,0 +1,48 @@
+name: FFH R105 worker A isolated lazy-Stanza memory proof
+on:
+  push:
+    branches: [ffh-r105-lazy-stanza-a-20261016]
+    paths: [.github/workflows/ffh-r105-lazy-stanza-a.yml]
+permissions:
+  contents: read
+jobs:
+  experimental-import-memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARGOS_DEVICE_TYPE: cpu
+      ARGOS_CHUNK_TYPE: MINISBD
+      ARGOS_COMPUTE_TYPE: int8
+      ARGOS_INTER_THREADS: '1'
+      ARGOS_INTRA_THREADS: '1'
+      ARGOS_BATCH_SIZE: '8'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - name: Checkout isolated proof branch
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Argos
+        run: python -m pip install --disable-pip-version-check argostranslate==1.11.0
+      - name: Install Argos English Spanish synthetic test model
+        run: python tests/r104_dependency_memory.py setup
+      - name: Record unchanged Argos baseline
+        run: python tests/r104_dependency_memory.py child --worker A --profile full-deps
+      - name: Disposable GitHub runner only - bypass eager Stanza import
+        run: python tests/r105_disposable_import_probe.py
+      - name: Keep dependency graph intact for this experiment
+        run: python -m pip show stanza torch
+      - name: Re-run synthetic translation in fresh modified process
+        run: python tests/r104_dependency_memory.py child --worker A --profile removed-optional
+      - name: Compare process memory and exact outputs
+        run: python tests/r104_dependency_memory.py compare --worker A
+      - name: Upload only synthetic test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r105-a-memory-proof
+          path: r104-output/
+          if-no-files-found: warn
+          retention-days: 3
