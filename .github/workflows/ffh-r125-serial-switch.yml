@@ -4,6 +4,8 @@ on:
     branches: [ffh-r125-single-instance-model-switch-20261016]
     paths:
       - .github/workflows/ffh-r125-serial-switch.yml
+      - tests/r125_serial_switch.py
+      - tests/r125_serial_gateway.py
 permissions:
   contents: read
 jobs:
