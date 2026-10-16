@@ -9,6 +9,16 @@ R121d German, real Argos EN→DE model with `ARGOS_BATCH_SIZE=1`, 512MiB Docker 
 
 The installed Gunicorn 23.0.0 `gthread` implementation in public upstream source, at `handle_request()`, sets `self.alive=False` once `self.nr>=self.max_requests`, logs `Autorestarting worker after current request`, and forces the current response's connection closed. Source: https://raw.githubusercontent.com/benoitc/gunicorn/23.0.0/gunicorn/workers/gthread.py. It is plausible that simultaneous/newly accepted TCP connections can be dropped during this transition; **this is a mechanism consistent with the logs, not a complete root-cause proof or a confirmed Gunicorn upstream bug**.
 
+## R122b VERIFIED outcome — exact 512MiB run
+R122b CI https://github.com/easy123dcavers-ctrl/ffh-translation-service/actions/runs/38858738514 — **PASS strict experimental gates** (2026-10-16).
+- Four serial Gunicorn master lifecycles (unique master PIDs) over 128.53 seconds; three *planned* restarts performed only after all accepted requests had returned and a separate check proved the Linux admission file lock could be acquired.
+- 14 full guarded 25-item batches = **350 invented translation item occurrences**. 322 provisional candidates, 28 held without drafts. 14/14 competing translation requests immediately rejected HTTP 429; legacy translation bypass paths each returned 410 per lifecycle; fake bearer received 401; all source-protection contracts still applied.
+- German Argos model EN→DE, inference batch 1, beam 4, one Gunicorn worker and two threads, cache disabled, runtime offline, hard 512MiB memory cgroup and 1 CPU.
+- **Peak cgroup 280.98 MiB, 45.12% headroom, zero OOM kills**; worst `/health` request under batch contention 0.0808 seconds, p95 0.0049 seconds.
+- Exactly one worker boot and ZERO Gunicorn automatic `max_requests` worker recycling events per master. Strict observed lock-idle gate passed for each shutdown.
+- **Important**: the test intentionally sent NO client requests between terminating a master and restarting it. It proved a safe process restart under controlled quiescent conditions, NOT zero-downtime availability, request routing or health under unexpected crash. The restarted service's startup times were ~0.75–0.80 seconds measured in an already built test container. Cold Render deploy can differ.
+- Full unedited GitHub Actions `summary.json` and four Gunicorn logs downloaded into the R122 MC handoff. The GitHub CI job is the authoritative PASS for this isolated test; it is **not** a public security/linguistic release approval.
+
 ## R122b alternative under test
 Branch `ffh-r122b-quiescent-restart-20261016` disables automatic per-request worker recycle (`max-requests=0`) in its disposable test container and tests **four serial Gunicorn master lifecycles** over ~2 minutes.
 - 1 Gunicorn worker, 2 threads, no runtime internet, real pinned test model, 512MiB cap, 1 CPU, Argos batch1 beam4.
