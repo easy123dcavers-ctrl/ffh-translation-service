@@ -1,0 +1,35 @@
+name: FFH R119 authenticated staging privacy and retry contracts
+on:
+  push:
+    branches: [ffh-r119-auth-privacy-client-20261016]
+    paths:
+      - .github/workflows/ffh-r119-security-contract.yml
+permissions:
+  contents: read
+jobs:
+  isolated-api-privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout test branch only
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Flask without Argos or external FFH connections
+        run: python -m pip install --disable-pip-version-check 'Flask>=3.1,<4'
+      - name: Syntax-check modified modules
+        run: |
+          python -m py_compile app.py tests/test_r119_auth_privacy.py \
+            tests/test_r119_retry_contract.py tools/r119_client_retry_contract.py
+      - name: Test new authenticated guarded routes and no-store responses
+        run: python -m unittest discover -s tests -p 'test_r119_auth_privacy.py' -v
+      - name: Test bounded retry and no automatic approval
+        run: python -m unittest discover -s tests -p 'test_r119_retry_contract.py' -v
+      - name: Verify prior R118 admission and R116 guarded endpoints
+        run: |
+          python -m unittest discover -s tests -p 'test_r118_admission.py' -v
+          python -m unittest discover -s tests -p 'test_r116_guarded_api.py' -v
+      - name: Verify unchanged R108 legacy HTTP contracts
+        run: python -m unittest discover -s tests -p 'test_r108_flask_http.py' -v
