@@ -101,7 +101,7 @@ jobs:
           set -euo pipefail
           python -c "from r143.ci_auth_fixture import setup; setup();print('R144_AUTH_SCHEMA_READY')"
       # R143 private Auth SQL: narrow server-only definer avoids broad auth table grants.
-      # R144 v2 fixture import alias corrected; 15 real Auth tests expected.
+      # R144 v3 fixture has self-contained fabricated terms constant; 15 tests.
       - name: Exercise genuine Auth and mid-inference revocation race gates
         shell: bash
         run: |
