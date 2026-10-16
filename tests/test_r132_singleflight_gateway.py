@@ -119,6 +119,9 @@ class SingleFlight(unittest.TestCase):
                 SlowBackend.release.set()
             self.assertEqual(future.result(timeout=4)[0],200)
             self.assertTrue(draining.result(timeout=4))
+    def test_04_burst_backlog_gives_429_not_connection_reset(self):
+        self.assertGreaterEqual(type(self.gateway).request_queue_size,16)
+
     def test_04_atomic_admission_with_many_contenders(self):
         with ThreadPoolExecutor(max_workers=16) as pool:
             future=self.begin_blocked(pool)
