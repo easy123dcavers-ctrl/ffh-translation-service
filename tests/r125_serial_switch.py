@@ -18,6 +18,8 @@ import urllib.request
 
 from r125_serial_gateway import Readiness, start_gateway
 from r123h_memory_policy import memory_gate
+# Running as tests/script.py does not add repository root to sys.path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.r119_verify_model_tree import verify
 
 ROOT=Path("/srv/ffh")
