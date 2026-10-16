@@ -80,6 +80,11 @@ def languages():
     return jsonify([{"code":SOURCE,"name":"English","targets":targets},
                     *([{"code":t,"name":TARGETS.get(t,t),"targets":[]} for t in targets])])
 
+def validated_json_body():
+    """Require a JSON object; reject arrays, strings, numbers and missing bodies."""
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else None
+
 def validate_target(source, target):
     if source != SOURCE:
         return jsonify({"error":"FFH currently supports source=en only"}), 400
@@ -92,7 +97,9 @@ def validate_target(source, target):
 
 @app.post("/translate")
 def translate():
-    payload = request.get_json(silent=True) or {}
+    payload = validated_json_body()
+    if payload is None:
+        return jsonify({"error":"request body must be a JSON object"}), 400
     q = payload.get("q")
     source = payload.get("source", SOURCE)
     target = payload.get("target")
@@ -109,7 +116,9 @@ def translate():
 
 @app.post("/translate-batch")
 def translate_batch():
-    payload = request.get_json(silent=True) or {}
+    payload = validated_json_body()
+    if payload is None:
+        return jsonify({"error":"request body must be a JSON object"}), 400
     items = payload.get("items")
     source = payload.get("source", SOURCE)
     target = payload.get("target")
