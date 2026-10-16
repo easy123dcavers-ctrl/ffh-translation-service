@@ -32,11 +32,8 @@ def setup():
                         "ffh_translation_learning_is_safety_text(text)"):
                 c.execute(f"REVOKE ALL ON FUNCTION public.{fn} FROM PUBLIC")
                 c.execute(f"GRANT EXECUTE ON FUNCTION public.{fn} TO ffh_r140_reader")
-            c.execute("GRANT USAGE ON SCHEMA auth TO ffh_r140_reader")
-            c.execute("""GRANT SELECT (id,email_confirmed_at,is_anonymous,deleted_at,banned_until)
-                    ON auth.users TO ffh_r140_reader""")
-            c.execute("""GRANT SELECT (id,user_id,not_after)
-                    ON auth.sessions TO ffh_r140_reader""")
+            # Do NOT grant direct auth.users or auth.sessions SELECT: GoTrue
+            # RLS denies direct access. Use one private, narrowed SQL helper.
             for table in ("ffh_member_profiles","ffh_terms_acceptances",
               "ffh_staff_roles","ffh_translation_memory",
               "ffh_translation_accuracy_review","ffh_translation_protected_source_overrides"):
@@ -44,3 +41,5 @@ def setup():
                 c.execute(f"ALTER TABLE public.{table} ENABLE ROW LEVEL SECURITY")
                 c.execute(f"""CREATE POLICY r143_reader_select ON public.{table}
                     FOR SELECT TO ffh_r140_reader USING (true)""")
+            from r143.private_auth import install_disposable_private_auth
+            install_disposable_private_auth(c)
