@@ -1,0 +1,10 @@
+ffh_target,argos_target,argos_model_name,argos_model_version,direct_en_model_listed,notes
+es,es,Spanish,1.0,true,Direct English to Spanish package
+fr,fr,French,1.9,true,Direct English to French package
+ja,ja,Japanese,1.1,true,Direct English to Japanese package
+de,de,German,1.3,true,Direct English to German package
+ar,ar,Arabic,1.0,true,Direct English to Arabic package; requires RTL QA
+fil,tl,Tagalog,1.9,true,FFH Filipino mapping requires language and regional review
+ko,ko,Korean,1.1,true,Direct English to Korean package
+vi,vi,Vietnamese,1.9,true,Direct English to Vietnamese package
+zh-Hans,zh,Chinese,1.9,true,General Chinese package; Simplified script is not certified by package name
