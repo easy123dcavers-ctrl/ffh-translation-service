@@ -1,0 +1,27 @@
+name: FFH R124 Spanish model baseline observation only
+on:
+  push:
+    branches: [ffh-r124-eight-language-20pct-20261016]
+    paths:
+      - .github/workflows/ffh-r124-es-baseline.yml
+permissions:
+  contents: read
+jobs:
+  es-observed-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Get verified Argos lightweight source revision
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: First observed en-to-es installed model bytes (NOT publisher trust)
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=es \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=2 \
+            --tag ffh-r124-es-observed --file tests/r124_es_observe.Dockerfile .
