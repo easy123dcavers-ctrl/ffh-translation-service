@@ -1,0 +1,61 @@
+name: FFH R125f bounded nine-model memory tripwire
+on:
+  push:
+    branches: [ffh-r125f-bounded-nine-model-20261016]
+    paths: [.github/workflows/ffh-r125f-memory-tripwire.yml]
+permissions:
+  contents: read
+jobs:
+  bounded-nine-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 42
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate Python syntax and strict 20pct cgroup admission
+        run: |
+          python -m py_compile tests/r125f_bounded_switch.py tests/r125_serial_gateway.py
+          python -m unittest discover -s tests -p test_r125_router_contract.py -v
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Verify lightweight Argos test source pinned to exact upstream
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build all nine model files ON DISK with observed-tree hash checks
+        run: |
+          docker build --tag ffh-r125f-disk-nine --file tests/r125f.Dockerfile .
+          docker image inspect ffh-r125f-disk-nine --format 'R125F_IMAGE_UNCOMPRESSED_BYTES {{.Size}}'
+      - name: Profile two full 25-item guarded batches per selected language
+        run: |
+          mkdir -p r125f-2-batches
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env R125F_MAX_BATCHES=2 \
+            --volume "$PWD/r125f-2-batches:/srv/ffh/r125-output" \
+            ffh-r125f-disk-nine
+          unset TOKEN
+      - name: Independently profile five batches per language with same fail-closed tripwire
+        if: always()
+        run: |
+          mkdir -p r125f-5-batches
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env R125F_MAX_BATCHES=5 \
+            --volume "$PWD/r125f-5-batches:/srv/ffh/r125-output" \
+            ffh-r125f-disk-nine
+          unset TOKEN
+      - name: Preserve success and failure evidence for each independent cgroup
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r125f-nine-bounded-workload-evidence
+          path: |
+            r125f-2-batches/
+            r125f-5-batches/
+          if-no-files-found: warn
+          retention-days: 5
