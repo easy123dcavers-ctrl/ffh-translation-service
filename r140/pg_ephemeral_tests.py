@@ -36,7 +36,7 @@ def setup():
             cur.execute('GRANT USAGE ON SCHEMA ffh_broker_private TO ffh_r140_writer')
             cur.execute('GRANT SELECT ON ffh_broker_private.key_registry TO ffh_r140_writer')
             cur.execute("""GRANT INSERT (receipt_digest,user_digest,payload_digest,state),
-                SELECT (receipt_digest),UPDATE (state,finished_at)
+                SELECT (receipt_digest,state),UPDATE (state,finished_at)
                 ON ffh_broker_private.receipts TO ffh_r140_writer""")
             cur.execute("""GRANT INSERT (user_digest,window_bucket,used_count),
                 SELECT (user_digest,window_bucket,used_count),UPDATE (used_count)
