@@ -6,6 +6,19 @@ import sys
 import types
 import unittest
 from unittest import mock
+from flask.testing import FlaskClient
+
+# TEST FIXTURE ONLY: never reuse this value as a real staging credential.
+TEST_STAGE_TOKEN = "R119_SYNTHETIC_TEST_TOKEN_NOT_FOR_PRODUCTION_0123456789"
+
+class StagingTestClient(FlaskClient):
+    def open(self, *args, **kwargs):
+        path = args[0] if args else kwargs.get("path", "")
+        if str(path).startswith("/experimental/guarded-"):
+            headers = kwargs.setdefault("headers", {})
+            if isinstance(headers, dict):
+                headers.setdefault("Authorization", "Bearer " + TEST_STAGE_TOKEN)
+        return super().open(*args, **kwargs)
 
 ROOT = Path(__file__).resolve().parents[1]
 SINGLE = "/experimental/guarded-translate"
@@ -37,7 +50,8 @@ def load(enabled):
     env = {
         "FFH_TARGET_LANGUAGE": "es", "FFH_MULTILINGUAL": "false",
         "FFH_TRANSLATION_CACHE_ENABLED": "false",
-        "FFH_GUARDED_API_STAGING_ONLY": "true" if enabled else "false"
+        "FFH_GUARDED_API_STAGING_ONLY": "true" if enabled else "false",
+        "FFH_GUARDED_STAGING_TOKEN": TEST_STAGE_TOKEN,
     }
     stub = {"argostranslate":root, "argostranslate.package":pkg,
             "argostranslate.translate":tx}
@@ -51,6 +65,7 @@ def load(enabled):
         finally:
             sys.path.pop(0)
     module.app.config["TESTING"] = True
+    module.app.test_client_class = StagingTestClient
     return module.app, calls
 
 
