@@ -59,7 +59,7 @@ jobs:
       - name: Build and fully verify nine Argos trees
         run: |
           docker build --tag ffh-r129-memory-diagnostic --file tests/r129_memory_attribution.Dockerfile .
-      - name: Diagnostic: real model, CPU 0.1, RAM 512MiB, unchanged 20pct limit
+      - name: "Diagnostic - real model, CPU 0.1, RAM 512MiB, unchanged 20pct limit"
         timeout-minutes: 35
         run: |
           set -euo pipefail
