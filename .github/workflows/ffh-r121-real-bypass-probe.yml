@@ -1,0 +1,46 @@
+name: FFH R121 real 512MiB legacy bypass migration probe
+on:
+  push:
+    branches: [ffh-r121-legacy-quarantine-security-audit-20261016]
+    paths:
+      - .github/workflows/ffh-r121-real-bypass-probe.yml
+permissions:
+  contents: read
+jobs:
+  guarded-migration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax-check isolated migration probe
+        run: python -m py_compile app.py tests/r121_real_migration_probe.py
+      - name: Pull immutable upstream Argos source and patch test distribution
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build disposable German translation model with pinned tree verification
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=8 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r121-de-test --file tests/r121.Dockerfile .
+      - name: Run migration-bypass and memory tests without runtime network
+        run: |
+          mkdir -p r121-output
+          RANDOM_STAGE_TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$RANDOM_STAGE_TOKEN" \
+            --volume "$PWD/r121-output:/srv/ffh/r121-output" \
+            ffh-r121-de-test
+          unset RANDOM_STAGE_TOKEN
+      - name: Retain synthetic-only evidence regardless of result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r121-real-stage-quarantine-de
+          path: r121-output/
+          if-no-files-found: warn
+          retention-days: 3
