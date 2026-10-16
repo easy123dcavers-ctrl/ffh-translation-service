@@ -21,6 +21,9 @@ URL="http://127.0.0.1:18781"
 MIB=1024*1024
 MEMORY_LIMIT=512*MIB
 SOAK_SECONDS=120
+MAX_WORKER_REQUESTS=int(os.environ.get("R119_TEST_MAX_REQUESTS","0"))
+if MAX_WORKER_REQUESTS not in (12,24):
+    raise ValueError("R119b requires precisely 12 or 24 worker requests")
 START=time.monotonic()
 
 def check(value,message):
@@ -99,9 +102,12 @@ def serve_one_round(index,report,deadline):
                 "FFH_MULTILINGUAL":"false"})
     proc=subprocess.Popen([sys.executable,"-m","gunicorn",
         "--workers","1","--threads","2","--timeout","120",
+        "--max-requests",str(MAX_WORKER_REQUESTS),
+        "--max-requests-jitter","0",
         "--bind","127.0.0.1:18781","app:app"],
         cwd=ROOT,env=env,stdout=log,stderr=subprocess.STDOUT)
-    round_report={"index":index,"pid":proc.pid,"startup_seconds":None,"cycles":0}
+    round_report={"index":index,"pid":proc.pid,"startup_seconds":None,
+                  "cycles":0,"max_worker_requests":MAX_WORKER_REQUESTS}
     try:
         start=time.monotonic()
         while time.monotonic()-start<35:
@@ -173,6 +179,8 @@ def serve_one_round(index,report,deadline):
             proc.wait()
         round_report["exit_code"]=proc.returncode
         log.close()
+        log_data=(OUT/f"gunicorn-{index}.log").read_text(encoding="utf-8")
+        round_report["worker_boots"]=log_data.count("Booting worker with pid")
 
 def main():
     check(TARGET in ("de","ko"),"R118 is targeted at the known problematic languages")
@@ -181,6 +189,7 @@ def main():
     prev=events()
     report={"test":"R118-safe-2-minute-guarded-admission-soak","target":TARGET,
         "configured_batch":os.getenv("ARGOS_BATCH_SIZE"),
+        "configured_worker_max_requests":MAX_WORKER_REQUESTS,
         "status":"NOT_RUN","human_approved":0,"production_writes":0,
         "network":"disabled","cache":False,"rounds":[],
         "busy_rejected":0,"items_processed":0,"accepted_batches":0,
@@ -197,6 +206,8 @@ def main():
               report["rounds"][0]["pid"]!=report["rounds"][1]["pid"],
               "Restart did not occur")
         check(report["accepted_batches"]>=8,"Too few batches for sustained soak")
+        check(all(r.get("worker_boots",0)>=2 for r in report["rounds"]),
+              "Gunicorn did not demonstrate repeated worker recycling")
         check(report["busy_rejected"]==report["accepted_batches"],
               "Not all overlapping requests were safely rejected")
         check(report["items_processed"]==report["accepted_batches"]*25,
