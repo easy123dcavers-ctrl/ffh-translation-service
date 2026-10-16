@@ -1,0 +1,61 @@
+name: FFH R119 authenticated real-model 512MiB privacy-soak
+on:
+  push:
+    branches: [ffh-r119-auth-privacy-client-20261016]
+    paths:
+      - .github/workflows/ffh-r119-authenticated-soak.yml
+permissions:
+  contents: read
+jobs:
+  authenticated-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - target: de
+            batch: 8
+            beam: 4
+          - target: ko
+            batch: 1
+            beam: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile secure API, checksum verifier and authenticated soak
+        run: |
+          python -m py_compile app.py tools/r119_verify_model_tree.py \
+            tests/r119_authenticated_soak.py
+      - name: Obtain and confirm pinned Argos upstream source
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build isolated verified model with no baked-in private staging token
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
+            --build-arg FFH_TEST_BATCH=${{ matrix.batch }} \
+            --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
+            --tag ffh-r119-${{ matrix.target }} --file tests/r119.Dockerfile .
+      - name: Run 512MiB constrained authenticated soak with random ephemeral bearer
+        run: |
+          mkdir -p r119-${{ matrix.target }}
+          STAGE_TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$STAGE_TOKEN" \
+            --volume "$PWD/r119-${{ matrix.target }}:/srv/ffh/r118-output" \
+            ffh-r119-${{ matrix.target }}
+          unset STAGE_TOKEN
+      - name: Upload only synthetic summaries and redacted service logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r119-authenticated-${{ matrix.target }}
+          path: r119-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 3
