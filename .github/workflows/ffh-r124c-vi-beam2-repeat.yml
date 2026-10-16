@@ -1,0 +1,57 @@
+name: FFH R124c Vietnamese beam2 repeat beam1 cold backup 20pct memory
+on:
+  push:
+    branches: [ffh-r124c-vietnamese-headroom20-20261016]
+    paths: [.github/workflows/ffh-r124c-vi-beam2-repeat.yml]
+permissions:
+  contents: read
+jobs:
+  strict-vietnamese-20pct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - profile: vi-batch1-beam2-repeat
+            beam: 2
+          - profile: vi-batch1-beam1-standby
+            beam: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check immutable >=20pct headroom and zero OOM hard gate
+        run: |
+          python -m py_compile tests/r124_eight_language_gateway.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Fetch Argos exact revision and package narrow test variant
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build pinned Vietnamese test model with batch1 lower beam
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=vi \
+            --build-arg FFH_TEST_BATCH=1 \
+            --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
+            --tag ffh-r124c-${{ matrix.profile }} --file tests/r124.Dockerfile .
+      - name: Validate four cold master lifecycles with exact 20pct memory reserve
+        run: |
+          mkdir -p r124c-${{ matrix.profile }}
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r124c-${{ matrix.profile }}:/srv/ffh/r118-output" \
+            ffh-r124c-${{ matrix.profile }}
+          unset TOKEN
+      - name: Preserve any failures as evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r124c-${{ matrix.profile }}
+          path: r124c-${{ matrix.profile }}/
+          if-no-files-found: warn
+          retention-days: 5
