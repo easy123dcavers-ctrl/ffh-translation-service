@@ -1,0 +1,69 @@
+name: FFH R124b Korean Vietnamese low-RAM 20 percent experiment
+on:
+  push:
+    branches: [ffh-r124b-korean-vietnamese-headroom20-20261016]
+    paths: [.github/workflows/ffh-r124b-lowram.yml]
+permissions:
+  contents: read
+jobs:
+  four-low-memory-candidates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - profile: ko-beam2
+            target: ko
+            batch: 1
+            beam: 2
+          - profile: ko-beam1
+            target: ko
+            batch: 1
+            beam: 1
+          - profile: vi-batch1-beam4
+            target: vi
+            batch: 1
+            beam: 4
+          - profile: vi-batch1-beam2
+            target: vi
+            batch: 1
+            beam: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact 20 percent 512MiB gate and synthetic runner safety checks
+        run: |
+          python -m py_compile tests/r123h_memory_policy.py tests/r124_eight_language_gateway.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Verify pinned source and prepare Argos test package
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build isolated alternative inference profile with prior model-tree equality check
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
+            --build-arg FFH_TEST_BATCH=${{ matrix.batch }} \
+            --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
+            --tag ffh-r124b-${{ matrix.profile }} --file tests/r124.Dockerfile .
+      - name: Full real model four-restart 512MiB gateway test and hard 20 pct gate
+        run: |
+          mkdir -p r124b-${{ matrix.profile }}
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r124b-${{ matrix.profile }}:/srv/ffh/r118-output" \
+            ffh-r124b-${{ matrix.profile }}
+          unset TOKEN
+      - name: Preserve evidence, including every failed profile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r124b-${{ matrix.profile }}
+          path: r124b-${{ matrix.profile }}/
+          if-no-files-found: warn
+          retention-days: 5
