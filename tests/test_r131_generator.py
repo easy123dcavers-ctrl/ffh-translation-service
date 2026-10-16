@@ -26,7 +26,7 @@ class R131GeneratorContract(unittest.TestCase):
     def test_strict_runtime_stability_unmodified(self):
         for token in ('SOAK_SECONDS=1800','sigkill_unknown_verified','oom_kills',
                       'len(report["rounds"])>=2*len(SEQUENCE)',
-                      'source="en"', 'os.killpg(proc.pid, signal.SIGKILL)'):
+                      '{"source":"en"', 'os.killpg(proc.pid, signal.SIGKILL)'):
             self.assertIn(token,self.generated)
     def test_only_expected_behavior_modified(self):
         self.assertIn('start_new_session=True',self.generated)
