@@ -1,0 +1,29 @@
+name: FFH R116 guarded candidate API offline integration QA
+on:
+  push:
+    branches: [ffh-r116-guarded-api-staging-20261016]
+    paths:
+      - .github/workflows/ffh-r116-guarded-api-qa.yml
+permissions:
+  contents: read
+jobs:
+  guarded-stage-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - name: Checkout isolated R116 test branch
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Flask only, no translation model
+        run: python -m pip install --disable-pip-version-check 'Flask>=3.1,<4'
+      - name: Compile all code
+        run: python -m py_compile app.py protected_translation.py tests/test_r116_guarded_api.py
+      - name: Run R114 protected text unit tests
+        run: python -m unittest discover -s tests -p test_r114_protected_translation.py -v
+      - name: Run mocked Flask R116 guarded HTTP tests
+        run: python -m unittest discover -s tests -p test_r116_guarded_api.py -v
+      - name: Recheck unchanged R108 legacy Flask API contracts
+        run: python -m unittest discover -s tests -p test_r108_flask_http.py -v
