@@ -1,0 +1,46 @@
+name: FFH R125b four language single-process rotating models
+on:
+  push:
+    branches: [ffh-r125b-four-model-switch-20261016]
+    paths: [.github/workflows/ffh-r125b-four-switch.yml]
+permissions:
+  contents: read
+jobs:
+  four-language-on-disk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Preflight stage-only switching safety and Python syntax
+        run: |
+          python -m py_compile tests/r125b_four_switch.py tests/r125_serial_gateway.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r125_router_contract.py -v
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Fetch exact Argos upstream commit and prepare lightweight fork for test
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build four previously observed Argos model trees on DISK in one image
+        run: |
+          docker build --tag ffh-r125b-four-disk --file tests/r125b.Dockerfile .
+      - name: Run ES KO FR VI sequential 512 MiB, offline, strict 20pct
+        run: |
+          mkdir -p r125b-results
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r125b-results:/srv/ffh/r125-output" \
+            ffh-r125b-four-disk
+          unset TOKEN
+      - name: Keep synthetic evidence for success OR hold
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r125b-es-ko-fr-vi-evidence
+          path: r125b-results/
+          if-no-files-found: warn
+          retention-days: 5
