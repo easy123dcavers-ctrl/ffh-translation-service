@@ -235,8 +235,15 @@ def make_handler(readiness, backend_port, stage_token):
     return GatewayHandler
 
 
+class BoundedListenGateway(ThreadingHTTPServer):
+    # The base server's five-slot listen backlog can reset short bursts before
+    # atomic 429 admission. Bound the *queued sockets* at 64 in this synthetic
+    # loopback-only test; never use this to bypass production rate limits.
+    request_queue_size = 64
+
+
 def start_gateway(readiness, *, backend_port, stage_token, port=0):
-    server = ThreadingHTTPServer(
+    server = BoundedListenGateway(
         ("127.0.0.1", port), make_handler(readiness, backend_port, stage_token))
     server.daemon_threads = True
     thread = threading.Thread(target=server.serve_forever, daemon=True)
