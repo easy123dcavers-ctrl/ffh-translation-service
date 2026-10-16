@@ -12,7 +12,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,*args,**kwargs):
         raise AssertionError("Unexpected off-origin redirect")
 
-def fetch(path,bearer=None,apikey=True,method="GET",json_body=None):
+def fetch(path,bearer=None,apikey=True,method="GET",json_body=None,private_profile=False):
     host=os.environ["FFH_R146_STAGE_URL"]
     key=os.environ.get("FFH_R146_STAGE_PUBLISHABLE_KEY","")
     if (urlsplit(host).scheme!="https" or
@@ -27,6 +27,7 @@ def fetch(path,bearer=None,apikey=True,method="GET",json_body=None):
         if not key.startswith("sb_publishable_"):raise AssertionError("publishable key only")
         h["apikey"]=key
     if bearer is not None:h["Authorization"]="Bearer "+bearer
+    if private_profile:h["Accept-Profile"]="ffh_r146_sandbox"
     opener=urllib.request.build_opener(NoRedirect(),
         urllib.request.HTTPSHandler(context=ssl.create_default_context()))
     req=urllib.request.Request(host+path,headers=h,method=method)
@@ -85,6 +86,18 @@ class HostedStageReadOnly(unittest.TestCase):
     def test_10_publishable_key_no_privileged_rest_access(self):
         status,headers,data=fetch("/rest/v1/ffh_staff_roles?select=role&limit=1")
         self.assertIn(status,(404,406))
+
+
+    def test_11_r146_private_schema_not_exposed_in_rest(self):
+        status,headers,data=fetch("/rest/v1/member_profiles?select=user_id&limit=1",private_profile=True)
+        print("R146_PRIVATE_SCHEMA_ACCESS_STATUS",status,flush=True)
+        self.assertEqual(status,406)
+    def test_12_r146_member_function_not_exposed(self):
+        status,headers,data=fetch("/rest/v1/rpc/member_status?p_uid=00000000-0000-4000-8000-000000000001&p_session=00000000-0000-4000-8000-000000000002",private_profile=True)
+        self.assertEqual(status,406)
+    def test_13_r146_source_function_not_exposed(self):
+        status,headers,data=fetch("/rest/v1/rpc/safe_source?p_text=FFH%20R146%20interface%20label%20for%20staging%20verification.",private_profile=True)
+        self.assertEqual(status,406)
 
 if __name__=="__main__":
     unittest.main(verbosity=2)
