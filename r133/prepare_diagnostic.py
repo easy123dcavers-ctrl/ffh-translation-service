@@ -67,7 +67,7 @@ def main(argv):
         print('python -m r133.prepare_diagnostic BASE_TEST OUT',file=sys.stderr)
         return 2
     raw=Path(argv[1]).read_bytes()
-    sha=hashlib.sha1(f"blob {len(raw)}\\0".encode()+raw).hexdigest()
+    sha=hashlib.sha1(f"blob {len(raw)}\0".encode()+raw).hexdigest()
     if sha != BASE_GIT_BLOB_SHA:
         raise RuntimeError(f"Source digest mismatch {sha}: halt")
     output=Path(argv[2]); output.parent.mkdir(parents=True,exist_ok=True)
