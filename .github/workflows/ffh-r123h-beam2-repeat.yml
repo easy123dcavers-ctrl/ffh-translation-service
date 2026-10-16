@@ -1,0 +1,47 @@
+name: FFH R123H repeat German beam2 strict 20 percent memory gate
+on:
+  push:
+    branches: [ffh-r123h-headroom20-20261016]
+    paths: [.github/workflows/ffh-r123h-beam2-repeat.yml]
+permissions:
+  contents: read
+jobs:
+  independent-beam2-cold-repeat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check exact 20 percent threshold and source syntax
+        run: |
+          python -m py_compile tests/r123_gateway_real_soak.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Verify pinned source used for German Argos model
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Create isolated German image, model batch 1 and inference beam 2
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=2 \
+            --tag ffh-r123h-beam2-confirm --file tests/r123.Dockerfile .
+      - name: Recheck real gateway + four restarts + memory 20 percent reserve
+        run: |
+          mkdir -p r123h-beam2-confirm
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r123h-beam2-confirm:/srv/ffh/r118-output" \
+            ffh-r123h-beam2-confirm
+          unset TOKEN
+      - name: Preserve pass or failure without losing evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r123h-beam2-recheck-evidence
+          path: r123h-beam2-confirm/
+          if-no-files-found: warn
+          retention-days: 3
