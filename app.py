@@ -11,6 +11,8 @@ from flask import Flask, jsonify, request
 import argostranslate.package
 import argostranslate.translate
 from translation_cache import TranslationCache
+from protected_translation import guarded_candidate, hold
+import re
 
 app = Flask(__name__)
 
@@ -27,6 +29,15 @@ MAX_BATCH_ITEMS = 25
 CACHE_ENABLED = os.environ.get("FFH_TRANSLATION_CACHE_ENABLED", "false").lower() == "true"
 CACHE_MODEL_GENERATION = os.environ.get("FFH_TRANSLATION_CACHE_GENERATION", "process-start")
 CACHE = TranslationCache(max_entries=128, ttl_seconds=600)
+
+# R116 STAGING EXPERIMENT: OFF by default. Not a public/member API release.
+# Existing /translate and /translate-batch semantics are unchanged.
+GUARDED_API_ENABLED = os.environ.get(
+    "FFH_GUARDED_API_STAGING_ONLY", "false"
+).lower() == "true"
+GUARDED_LINK = re.compile(
+    r"(?i)(?:https?://|www\\.)|[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}"
+)
 
 if CONFIGURED_TARGET not in TARGETS:
     raise RuntimeError(f"Unsupported FFH_TARGET_LANGUAGE: {CONFIGURED_TARGET}")
@@ -144,6 +155,62 @@ def translate_batch():
             app.logger.exception("Argos batch item failed")
             results.append({"id":item_id,"ok":False,"error":"translation failed"})
     return jsonify({"target":target,"count":len(results),"results":results})
+
+
+# Experimental isolated-stage-only endpoints. Do not enable on Render production.
+# They do not call translate_text() or the optional shared translation cache:
+# private/member text MUST NOT be placed into a cross-request cache.
+def guarded_draft(q, target):
+    if isinstance(q, str) and GUARDED_LINK.search(q):
+        return hold("unprotected_url_or_email")
+    return guarded_candidate(
+        q, lambda segment: argostranslate.translate.translate(
+            segment, SOURCE, target)
+    )
+
+
+@app.post("/experimental/guarded-translate")
+def experimental_guarded_translate():
+    if not GUARDED_API_ENABLED:
+        return jsonify({"error": "not found"}), 404
+    body = validated_json_body()
+    if body is None:
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    bad = validate_target(body.get("source", SOURCE), body.get("target"))
+    if bad:
+        return bad
+    result = guarded_draft(body.get("q"), body["target"])
+    # A held response has NO draft. No result is ever human approved.
+    return jsonify(result)
+
+
+@app.post("/experimental/guarded-translate-batch")
+def experimental_guarded_translate_batch():
+    if not GUARDED_API_ENABLED:
+        return jsonify({"error": "not found"}), 404
+    body = validated_json_body()
+    if body is None:
+        return jsonify({"error": "request body must be a JSON object"}), 400
+    items = body.get("items")
+    if not isinstance(items, list) or not 1 <= len(items) <= MAX_BATCH_ITEMS:
+        return jsonify({"error": f"items must contain 1-{MAX_BATCH_ITEMS} entries"}), 400
+    bad = validate_target(body.get("source", SOURCE), body.get("target"))
+    if bad:
+        return bad
+    response = []
+    for i, item in enumerate(items):
+        if isinstance(item, str):
+            identifier, q = str(i), item
+        elif isinstance(item, dict):
+            identifier, q = str(item.get("id", i)), item.get("q")
+        else:
+            identifier, q = str(i), None
+        candidate = guarded_draft(q, body["target"])
+        response.append({"id": identifier, **candidate})
+    return jsonify({"target": body["target"], "count": len(response),
+                    "results": response, "human_approved": False})
+
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "10000"))
