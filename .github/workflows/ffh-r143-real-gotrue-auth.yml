@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m unittest r143.ci_auth_tests -v 2>&1 | tee r143-auth.log
-          grep -E 'Ran 5 tests' r143-auth.log
+          grep -E 'Ran 6 tests' r143-auth.log
           grep -E '^OK$' r143-auth.log
           echo 'R143_REAL_GOTRUE_SIGNED_TOKEN_AND_PG_BROKER_PASS_NOT_PRODUCTION'
       - name: Preserve logs and exact tested sources
