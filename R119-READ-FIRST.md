@@ -1,4 +1,16 @@
 # FFH R119 — Authentication, privacy, client retries and model repeatability
+
+## VERIFIED UPDATE: real-model authentication soak (2026-10-16)
+https://github.com/easy123dcavers-ctrl/ffh-translation-service/actions/runs/38853882116
+
+Both models PASSED the post-installation R113 known-tree hash equality check and ran with a randomly generated per-run staging bearer, no runtime network, no private/member text, one Gunicorn worker, two threads, one CPU, one installed model, and a hard 512 MiB cgroup.
+
+- **German PASS:** 475 synthetic batch outputs in 19 accepted 25-item batches, 19/19 overlapping requests rejected by HTTP 429, 19 unauthorized HTTP 401 checks from two Gunicorn starts, 281.48 MiB peak, 45.02% memory headroom, max health latency 0.0815s, zero OOM kills and zero approvals/writes.
+- **Korean HOLD / CI JOB FAILED:** 800 synthetic batch outputs in 32 accepted 25-item batches, 32/32 overlapping HTTP 429, HTTP 401 checks succeeded, 494.03 MiB peak with only 3.51% headroom, zero OOM kills. This VIOLATED strict >=15% reserve. More work was processed within the fixed two-minute window than in R118 (375 items), exposing a memory-growth or cumulative load issue. Do **not** interpret the successful HTTP operations as memory acceptance; the CI verdict is failure.
+- Failure remediation experiment on separate branch `ffh-r119b-ko-recycle-20261016`: bounded Gunicorn worker lifetimes 12/24 requests, with the same memory, health and authentication gates. No results should be asserted without reading that run's final logs.
+
+**Important:** These are short isolated tests, not enterprise security certification or real user authorization. Production legacy APIs remain unguarded by this new staging-only token check; release HOLD continues.
+
 Date: 2026-10-16. **READ FIRST — SOURCE AND TEST BRANCH ONLY**
 Branch: `ffh-r119-auth-privacy-client-20261016`
 **PRODUCTION UNCHANGED — NO DEPLOYMENT AUTHORIZATION.**
