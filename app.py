@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from threading import BoundedSemaphore
 
 APP_ROOT = Path(__file__).resolve().parent
 MODEL_DIR = APP_ROOT / ".argos" / "packages"
@@ -35,6 +36,9 @@ CACHE = TranslationCache(max_entries=128, ttl_seconds=600)
 GUARDED_API_ENABLED = os.environ.get(
     "FFH_GUARDED_API_STAGING_ONLY", "false"
 ).lower() == "true"
+# R118: process-local admission; only valid with one Gunicorn worker.
+GUARDED_CAPACITY = BoundedSemaphore(value=1)
+MAX_GUARDED_BODY_BYTES = 128 * 1024
 GUARDED_LINK = re.compile(
     r"(?i)(?:https?://|www\.)|[\w.+-]+@[\w.-]+\.[a-z]{2,}"
 )
@@ -160,6 +164,28 @@ def translate_batch():
 # Experimental isolated-stage-only endpoints. Do not enable on Render production.
 # They do not call translate_text() or the optional shared translation cache:
 # private/member text MUST NOT be placed into a cross-request cache.
+def guarded_input_size_error():
+    """Do not read potentially unbounded request bodies."""
+    if request.content_length is None:
+        return jsonify({"error": "content-length required"}), 411
+    if request.content_length > MAX_GUARDED_BODY_BYTES:
+        return jsonify({"error": "request body too large"}), 413
+    return None
+
+
+def guarded_admit(fn):
+    """Leave the second Gunicorn thread free for /health; never queue requests."""
+    if not GUARDED_CAPACITY.acquire(blocking=False):
+        return jsonify({"error": "translation service busy",
+                        "retryable": True, "retry_after_seconds": 2}), 429, {
+                            "Retry-After": "2"
+                        }
+    try:
+        return fn()
+    finally:
+        GUARDED_CAPACITY.release()
+
+
 def guarded_draft(q, target):
     if isinstance(q, str) and GUARDED_LINK.search(q):
         return hold("unprotected_url_or_email")
@@ -173,21 +199,26 @@ def guarded_draft(q, target):
 def experimental_guarded_translate():
     if not GUARDED_API_ENABLED:
         return jsonify({"error": "not found"}), 404
+    size_error = guarded_input_size_error()
+    if size_error is not None:
+        return size_error
     body = validated_json_body()
     if body is None:
         return jsonify({"error": "request body must be a JSON object"}), 400
     bad = validate_target(body.get("source", SOURCE), body.get("target"))
     if bad:
         return bad
-    result = guarded_draft(body.get("q"), body["target"])
-    # A held response has NO draft. No result is ever human approved.
-    return jsonify(result)
+    return guarded_admit(lambda: jsonify(guarded_draft(
+        body.get("q"), body["target"])))
 
 
 @app.post("/experimental/guarded-translate-batch")
 def experimental_guarded_translate_batch():
     if not GUARDED_API_ENABLED:
         return jsonify({"error": "not found"}), 404
+    size_error = guarded_input_size_error()
+    if size_error is not None:
+        return size_error
     body = validated_json_body()
     if body is None:
         return jsonify({"error": "request body must be a JSON object"}), 400
@@ -197,18 +228,20 @@ def experimental_guarded_translate_batch():
     bad = validate_target(body.get("source", SOURCE), body.get("target"))
     if bad:
         return bad
-    response = []
-    for i, item in enumerate(items):
-        if isinstance(item, str):
-            identifier, q = str(i), item
-        elif isinstance(item, dict):
-            identifier, q = str(item.get("id", i)), item.get("q")
-        else:
-            identifier, q = str(i), None
-        candidate = guarded_draft(q, body["target"])
-        response.append({"id": identifier, **candidate})
-    return jsonify({"target": body["target"], "count": len(response),
-                    "results": response, "human_approved": False})
+    def compute_batch():
+        response = []
+        for i, item in enumerate(items):
+            if isinstance(item, str):
+                identifier, q = str(i), item
+            elif isinstance(item, dict):
+                identifier, q = str(item.get("id", i)), item.get("q")
+            else:
+                identifier, q = str(i), None
+            candidate = guarded_draft(q, body["target"])
+            response.append({"id": identifier, **candidate})
+        return jsonify({"target": body["target"], "count": len(response),
+                        "results": response, "human_approved": False})
+    return guarded_admit(compute_batch)
 
 
 
