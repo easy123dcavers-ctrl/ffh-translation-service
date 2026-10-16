@@ -36,7 +36,7 @@ GUARDED_API_ENABLED = os.environ.get(
     "FFH_GUARDED_API_STAGING_ONLY", "false"
 ).lower() == "true"
 GUARDED_LINK = re.compile(
-    r"(?i)(?:https?://|www\\.)|[\\w.+-]+@[\\w.-]+\\.[a-z]{2,}"
+    r"(?i)(?:https?://|www\.)|[\w.+-]+@[\w.-]+\.[a-z]{2,}"
 )
 
 if CONFIGURED_TARGET not in TARGETS:
