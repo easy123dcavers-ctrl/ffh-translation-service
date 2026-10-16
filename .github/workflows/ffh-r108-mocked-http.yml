@@ -1,0 +1,25 @@
+name: FFH R108 Flask HTTP contract tests with fake translator
+on:
+  push:
+    branches: [ffh-r108-flask-mocked-http-20261016]
+    paths:
+      - .github/workflows/ffh-r108-mocked-http.yml
+permissions:
+  contents: read
+jobs:
+  r108-http-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout isolated R108 test branch
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Flask only, without Argos or translation models
+        run: python -m pip install --disable-pip-version-check 'Flask>=3.1,<4'
+      - name: Compile HTTP tests and API modules
+        run: python -m py_compile app.py translation_cache.py tests/test_r108_flask_http.py
+      - name: Exercise actual Flask HTTP routes with fake Argos translator
+        run: python -m unittest discover -s tests -p 'test_r108_flask_http.py' -v
