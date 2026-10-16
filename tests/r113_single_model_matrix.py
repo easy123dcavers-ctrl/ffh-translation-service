@@ -19,6 +19,8 @@ TARGETS = {"fr", "ja", "de", "ar", "tl", "ko", "vi", "zh"}
 TARGET = os.environ.get("FFH_TARGET_LANGUAGE", "")
 OUT = Path("/srv/ffh/r113-output")
 ROOT = Path("/srv/ffh")
+# Match app.py and install_models.py before importing Argos settings.
+os.environ["ARGOS_PACKAGES_DIR"] = str(ROOT / ".argos" / "packages")
 URL = "http://127.0.0.1:18753"
 NUMBERS = re.compile(r"(?<![A-Za-z])\d+(?:[.,]\d+)?")
 MARKERS = re.compile(r"\{\{[A-Z][A-Z0-9_]*\}\}")
