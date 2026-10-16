@@ -23,6 +23,7 @@ COPY app.py install_models.py translation_cache.py protected_translation.py ./
 COPY tests/r110_prefetch_minisbd.py tests/r110_prefetch_minisbd.py
 COPY tests/r123_readiness_gateway.py tests/r123_readiness_gateway.py
 COPY tests/r123_gateway_real_soak.py tests/r123_gateway_real_soak.py
+COPY tests/r123h_memory_policy.py tests/r123h_memory_policy.py
 COPY models/r119_observed_model_trees.json models/r119_observed_model_trees.json
 COPY tools/r119_verify_model_tree.py tools/r119_verify_model_tree.py
 RUN test -n "$FFH_TEST_TARGET" \
