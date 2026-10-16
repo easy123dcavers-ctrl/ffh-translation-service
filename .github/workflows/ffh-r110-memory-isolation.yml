@@ -1,0 +1,38 @@
+name: FFH R110 isolated 512MiB memory-capped Gunicorn integration
+on:
+  push:
+    branches: [ffh-r110-memory-cgroup-staging-20261016]
+    paths:
+      - .github/workflows/ffh-r110-memory-isolation.yml
+permissions:
+  contents: read
+jobs:
+  isolated-memory-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout experiment branch only
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Retrieve pinned upstream source for test-only build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build disposable Argos and Gunicorn container
+        run: docker build --tag ffh-r110-memory --file tests/r110.Dockerfile .
+      - name: Execute inside real 512MiB cgroup without runtime network
+        run: |
+          mkdir -p r110-output
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1             --volume "$PWD/r110-output:/srv/ffh/r106-output"             ffh-r110-memory
+      - name: Retain synthetic metrics only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r110-512m-cgroup-evidence
+          path: r110-output/
+          if-no-files-found: warn
+          retention-days: 3
