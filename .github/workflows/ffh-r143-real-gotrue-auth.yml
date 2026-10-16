@@ -40,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF_NAME" = 'ffh-r143-real-gotrue-ephemeral-20261017'
-          python -m py_compile r143/online_auth.py r143/ci_auth_fixture.py r143/ci_auth_tests.py
+          python -m py_compile r143/private_auth.py r143/online_auth.py r143/ci_auth_fixture.py r143/ci_auth_tests.py
           python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
           python -c "import psycopg;assert psycopg.__version__=='3.2.6'"
       - name: First prove 45 original R139 real PostgreSQL tests
@@ -100,7 +100,7 @@ jobs:
         run: |
           set -euo pipefail
           python -c "from r143.ci_auth_fixture import setup; setup();print('R143_AUTH_SCHEMA_READY')"
-      # R143 real GoTrue predicate diagnostic: account and session booleans only.
+      # R143 private Auth SQL: narrow server-only definer avoids broad auth table grants.
       - name: Exercise genuine Auth token verification and original durable broker
         shell: bash
         run: |
