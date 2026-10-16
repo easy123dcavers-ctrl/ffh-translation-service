@@ -1,0 +1,59 @@
+name: FFH R125 two-model single resident 512MiB switch
+on:
+  push:
+    branches: [ffh-r125-single-instance-model-switch-20261016]
+    paths:
+      - .github/workflows/ffh-r125-serial-switch.yml
+permissions:
+  contents: read
+jobs:
+  offline-router:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile serial switch and gateway modules before model build
+        run: |
+          python -m py_compile tests/r125_serial_gateway.py tests/r125_serial_switch.py tests/test_r125_router_contract.py
+          python -m unittest discover -s tests -p test_r125_router_contract.py -v
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+  two-model-512MiB:
+    runs-on: ubuntu-latest
+    needs: offline-router
+    timeout-minutes: 28
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax validation before expensive model installation
+        run: |
+          python -m py_compile tests/r125_serial_gateway.py tests/r125_serial_switch.py tests/r123h_memory_policy.py
+      - name: Fetch exact upstream Argos source and prepare lightweight test build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build two model packages separately on disk, check both observed-file hashes
+        run: |
+          docker build -t ffh-r125-serial-two-models --file tests/r125.Dockerfile .
+      - name: Switch ES FR ES FR with only one Gunicorn process, hard 512MiB, offline
+        run: |
+          mkdir -p r125-results
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r125-results:/srv/ffh/r125-output" \
+            ffh-r125-serial-two-models
+          unset TOKEN
+      - name: Preserve synthetic 2-model and memory evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r125-es-fr-single-resident-evidence
+          path: r125-results/
+          if-no-files-found: warn
+          retention-days: 5
