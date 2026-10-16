@@ -4,6 +4,8 @@ on:
     branches: [ffh-r119-auth-privacy-client-20261016]
     paths:
       - .github/workflows/ffh-r119-security-contract.yml
+      - tests/test_r119_model_tree.py
+      - tools/r119_verify_model_tree.py
 permissions:
   contents: read
 jobs:
@@ -27,6 +29,8 @@ jobs:
         run: python -m unittest discover -s tests -p 'test_r119_auth_privacy.py' -v
       - name: Test bounded retry and no automatic approval
         run: python -m unittest discover -s tests -p 'test_r119_retry_contract.py' -v
+      - name: Verify model-tree baseline rejects mutations
+        run: python -m unittest discover -s tests -p 'test_r119_model_tree.py' -v
       - name: Verify prior R118 admission and R116 guarded endpoints
         run: |
           python -m unittest discover -s tests -p 'test_r118_admission.py' -v
