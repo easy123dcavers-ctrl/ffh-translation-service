@@ -29,8 +29,8 @@ def build(source: str) -> str:
                sum(r["target"]=="ko" for r in report["rounds"])>=2,
                "Both diagnostic targets must be revisited across circuits")''')
     s=replace_once(s,
-        '"r133_diagnostic_only":True',
-        '"r133_diagnostic_only":True,"r134_conservative_inference":True')
+        'report["r133_diagnostic_only"]=True',
+        'report["r133_diagnostic_only"]=True; report["r134_conservative_inference"]=True')
     ast.parse(s)
     return s
 
