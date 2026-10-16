@@ -1,0 +1,95 @@
+name: FFH R129 diagnostic build-verified model without per-switch rehash
+on:
+  push:
+    branches: [ffh-r129-disposable-endurance-20261017]
+    paths: [.github/workflows/ffh-r129-memory-attribution.yml]
+permissions:
+  contents: read
+jobs:
+  attributed-nine-models:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin source and keep full build-time SHA verification
+        run: |
+          set -euo pipefail
+          test "$(git hash-object tests/r125f_bounded_switch.py)" = 'a73832312115cc02c019cb1fa2e8edd457c7654b'
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = '63b84ecb46c740c7a7c066d58636434d3e893ebf'
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+          python - <<'PY'
+          from pathlib import Path
+          import ast
+          s=Path("tests/r125f_bounded_switch.py").read_text()
+          old="    match=verify(target,p,baselines)"
+          new='''    # EXPERIMENT: model trees were fully SHA verified at Docker build-time.
+              # Avoid a second full-tree hash immediately before Argos load.
+              entry=baselines["verified_packages"][target]
+              match={"target":target,"tree_sha256":entry["sha256"],
+                     "tree_bytes":entry["bytes"],"tree_files":entry["files"],
+                     "release_certified":False}'''
+          # Align explanatory comment with the selected function's four-space indent.
+          new=new.replace("              # Avoid","    # Avoid").replace("              entry=","    entry=").replace("              match=","    match=").replace("                     ","           ")
+          assert s.count(old)==1, "Source changed"
+          s=s.replace(old,new)
+          anchor='                    round_info["current_mib_last_batch"]=round(cgroup("memory.current")/MIB,2)'
+          instrumentation='''                    rawstat=(Path("/sys/fs/cgroup")/"memory.stat").read_text().splitlines()
+                              parts=dict(line.split() for line in rawstat)
+                              round_info["memory_stat_mib_after_batch"]={
+                                  k:round(int(parts.get(k,0))/MIB,2)
+                                  for k in ("anon","file","slab","shmem","kernel")}'''
+          instrumentation=instrumentation.replace("                              parts=","                    parts=").replace("                              round_info","                    round_info").replace("                                  k:","                        k:").replace("                                  for k","                        for k")
+          assert s.count(anchor)==1
+          s=s.replace(anchor,anchor+"\n"+instrumentation)
+          ast.parse(s)
+          Path("tests/r129_memory_attribution.py").write_text(s)
+          base=Path("tests/r125f.Dockerfile").read_text()
+          a="COPY tests/r125f_bounded_switch.py tests/r125f_bounded_switch.py"
+          b='CMD ["python", "tests/r125f_bounded_switch.py"]'
+          assert base.count(a)==1 and base.count(b)==1
+          Path("tests/r129_memory_attribution.Dockerfile").write_text(
+              base.replace(a,"COPY tests/r129_memory_attribution.py tests/r129_memory_attribution.py")
+                  .replace(b,'CMD ["python", "tests/r129_memory_attribution.py"]'))
+          PY
+          python -m py_compile tests/r129_memory_attribution.py
+      - name: Build and fully verify nine Argos trees
+        run: |
+          docker build --tag ffh-r129-memory-diagnostic --file tests/r129_memory_attribution.Dockerfile .
+      - name: Diagnostic: real model, CPU 0.1, RAM 512MiB, unchanged 20pct limit
+        timeout-minutes: 35
+        run: |
+          set -euo pipefail
+          mkdir -p r129-memory-attribution-output
+          chmod 0777 r129-memory-attribution-output
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          trap 'unset TOKEN' EXIT
+          docker run --rm --network none --memory 512m --memory-swap 512m \
+            --cpus 0.1 --pids-limit 128 --security-opt no-new-privileges --cap-drop ALL \
+            -e "FFH_GUARDED_STAGING_TOKEN=$TOKEN" -e R125F_MAX_BATCHES=2 \
+            -v "$PWD/r129-memory-attribution-output:/srv/ffh/r125-output" \
+            ffh-r129-memory-diagnostic
+      - name: Verify diagnostic outcome only
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('r129-memory-attribution-output/summary.json').read_text())
+          assert s['status']=='PASS_BOUNDED_NINE_MODEL_SWITCH_RESOURCE_ONLY',s['status']
+          assert s['memory_peak_mib']<=409.6 and s['oom_kills']==0
+          assert len(s['rounds'])==9
+          assert s['items']==s['busy_429']*25
+          print('R129_BUILD_VERIFIED_DIAGNOSTIC_PASS_NOT_1800S',
+                {k:s[k] for k in ('memory_peak_mib','headroom_pct','wall_seconds','items')})
+          PY
+      - name: Save memory attribution including failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r129-memory-attribution
+          path: r129-memory-attribution-output/
+          if-no-files-found: warn
+          retention-days: 3
