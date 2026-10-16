@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 from r123_readiness_gateway import Readiness, start_gateway
+from r123h_memory_policy import memory_gate, MEMORY_HEADROOM_MIN_PERCENT
 
 TARGET=os.environ.get("FFH_TARGET_LANGUAGE")
 ROOT=Path("/srv/ffh")
@@ -246,6 +247,7 @@ def main():
         "controlled_master_restarts":ROUNDS-1,
         "gateway":"loopback-only bounded readiness and drain proxy",
         "gateway_feature_production_enabled":False,
+        "headroom_gate_minimum_percent":MEMORY_HEADROOM_MIN_PERCENT,
         "accepts_planned_restart_gap":True,
         "status":"NOT_RUN","human_approved":0,"production_writes":0,
         "network":"disabled","cache":False,"rounds":[],
@@ -297,11 +299,14 @@ def main():
         peak=cgroup("memory.peak")
         report["memory_peak_mib"]=round(peak/MIB,2)
         report["headroom_pct"]=round((MEMORY_LIMIT-peak)/MEMORY_LIMIT*100,2)
+        report["required_headroom_pct"]=MEMORY_HEADROOM_MIN_PERCENT
+        report["allowed_peak_mib"]=round(MEMORY_LIMIT/MIB*0.8,2)
+        report["memory_policy"]="hard_512MiB_20pct_reserve_zero_oom"
         latest=events()
         report["oom_kills"]=latest.get("oom_kill",0)-prev.get("oom_kill",0)
         report["total_seconds"]=round(time.monotonic()-START,2)
         report["gateway_snapshot"]=GATEWAY_STATE.snapshot()
-        if report["oom_kills"] or report["headroom_pct"]<15:
+        if not memory_gate(peak,MEMORY_LIMIT,report["oom_kills"]):
             report["status"]="HOLD_MEMORY"
         elif report["status"]=="PASS_GATEWAY_DRAIN_PENDING_RESOURCE":
             report["status"]="PASS_GATEWAY_EXPLICIT_503_AND_RESOURCE_ONLY"
@@ -311,7 +316,8 @@ def main():
             if k not in ("health_during_seconds","busy_response_seconds",
                          "batch_seconds","rounds")},sort_keys=True),flush=True)
     check(report["oom_kills"]==0,"Out-of-memory kill detected")
-    check(report["headroom_pct"]>=15,"Not enough memory headroom")
+    check(memory_gate(peak,MEMORY_LIMIT,report["oom_kills"]),
+          "STRICT RESOURCE HOLD: less than 20% memory headroom or OOM kill")
 
 if __name__=="__main__":
     main()
