@@ -78,7 +78,7 @@ class RevalidationCases(unittest.TestCase):
             return self.draft(target,text)
         with self.assertRaises(Denied) as e:self.broker(suspend).submit(self.token,self.request())
         self.assertIn(e.exception.status,(403,503))
-        self.assertEqual(self.states(),[("done",)])
+        self.assertEqual(self.states(),[("held",)])
     def test_05_terms_revoked_during_translation_withheld(self):
         def revoke_terms(target,text):
             with conn("postgres") as db:
@@ -86,7 +86,7 @@ class RevalidationCases(unittest.TestCase):
             return self.draft(target,text)
         with self.assertRaises(Denied) as e:self.broker(revoke_terms).submit(self.token,self.request())
         self.assertEqual(e.exception.status,403)
-        self.assertEqual(self.states(),[("done",)])
+        self.assertEqual(self.states(),[("held",)])
     def test_06_model_cannot_approve_automatically(self):
         def injected(target,text):
             return {"status":"provisional_candidate","draft":"sample",
@@ -111,4 +111,4 @@ class RevalidationCases(unittest.TestCase):
             return self.draft(target,text)
         with self.assertRaises(Denied) as e:self.broker(revoke_session).submit(self.token,self.request())
         self.assertIn(e.exception.status,(403,503))
-        self.assertEqual(self.states(),[("done",)])
+        self.assertEqual(self.states(),[("held",)])
