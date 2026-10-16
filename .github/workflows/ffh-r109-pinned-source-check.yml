@@ -1,0 +1,54 @@
+name: FFH R109 pinned lightweight Argos source-build verification
+on:
+  push:
+    branches: [ffh-r109-pinned-lightweight-build-20261016]
+    paths:
+      - .github/workflows/ffh-r109-pinned-source-check.yml
+permissions:
+  contents: read
+jobs:
+  isolated-build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARGOS_DEVICE_TYPE: cpu
+      ARGOS_CHUNK_TYPE: MINISBD
+      ARGOS_COMPUTE_TYPE: int8
+      ARGOS_INTER_THREADS: '1'
+      ARGOS_INTRA_THREADS: '1'
+      ARGOS_BATCH_SIZE: '8'
+      OMP_NUM_THREADS: '1'
+      FFH_TARGET_LANGUAGE: es
+      FFH_MULTILINGUAL: 'false'
+      FFH_TRANSLATION_CACHE_ENABLED: 'false'
+    steps:
+      - name: Checkout isolated FFH test branch
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Test source-patch guards without network dependencies
+        run: python -m unittest discover -s tests -p 'test_r109_source_builder.py' -v
+      - name: Fetch pinned upstream Argos source
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate /tmp/r109-upstream
+          test "$(git -C /tmp/r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+      - name: Construct attributed lightweight build from pinned source
+        run: python tools/r109_prepare_lightweight_source.py --upstream /tmp/r109-upstream --output /tmp/r109-light
+      - name: Install test-only packaged Argos plus Flask
+        run: |
+          python -m pip install --disable-pip-version-check --no-cache-dir /tmp/r109-light 'Flask>=3.1,<4'
+          python -m pip check
+      - name: Install one synthetic test model into isolated local packages directory
+        run: python install_models.py
+      - name: Test actual EN-ES Argos with Flask test client
+        run: python tests/r109_real_argos_flask_smoke.py
+      - name: Upload synthetic report (no secrets or FFH content)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r109-test-only-source-build
+          path: r109-output/
+          if-no-files-found: warn
+          retention-days: 3
