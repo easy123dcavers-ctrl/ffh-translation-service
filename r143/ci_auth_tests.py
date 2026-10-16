@@ -6,7 +6,7 @@ import urllib.error
 import unittest
 from r140.pg_ephemeral_tests import conn,SECRET,nonce
 from r139.postgres_ledger import make_staged_postgres_broker
-from r142.schema_matched import RegisteredReadOnly
+from r143.private_auth import PrivateMemberReadOnly
 from r143.online_auth import OnlineAuth,decode_untrusted_session
 from r136.broker import Denied
 
@@ -30,7 +30,7 @@ class RealAuthTest(unittest.TestCase):
     def setUpClass(cls):
         if os.getenv("FFH_R143_EPHEMERAL_ONLY")!="1":
             raise RuntimeError("disposable CI only")
-        cls.reader=RegisteredReadOnly(lambda:conn("ffh_r140_reader"))
+        cls.reader=PrivateMemberReadOnly(lambda:conn("ffh_r140_reader"))
         cls.online=OnlineAuth(URL+"/user",cls.reader,local_ci=True)
         email="r143-local@example.test"
         password="local-only-NotARealCredential_1234"
@@ -64,15 +64,13 @@ class RealAuthTest(unittest.TestCase):
                               (self.uid,)).fetchone()[0]
             terms=db.execute("SELECT COUNT(*) FROM public.ffh_terms_acceptances WHERE user_id=%s",
                             (self.uid,)).fetchone()[0]
-        from r142.schema_matched import AUTHORIZED_MEMBER_SQL
-        checked=self.reader.fetch(AUTHORIZED_MEMBER_SQL,(self.session_id,self.uid),1)
-        filtered=[{k:v for k,v in row.items() if k!="user_id"} for row in checked]
-        with conn("postgres") as db:
-            session_flags=db.execute("""SELECT not_after IS NULL,
-                not_after > now() FROM auth.sessions
-                WHERE id=%s AND user_id=%s""",(self.session_id,self.uid)).fetchone()
-        print("R143_SQL_VERDICTS",filtered,
-              "session_not_after_flags",session_flags,flush=True)
+        with conn("ffh_r140_reader") as read_db:
+            try:
+                read_db.execute("SELECT id FROM auth.users LIMIT 1")
+            except Exception:
+                print("R143_DIRECT_AUTH_SELECT_DENIED_EXPECTED",flush=True)
+            else:
+                raise AssertionError("Direct auth.users SELECT unexpectedly allowed")
         print("R143_AUTH_BOOLEAN_DIAG",
               {"user_row_flags":row,"session_match":sessions,
                "has_profile":profile,"terms_count":terms,
