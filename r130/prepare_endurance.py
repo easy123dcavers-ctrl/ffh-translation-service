@@ -33,7 +33,7 @@ def main(argv: list[str]) -> int:
         print("Usage: python -m r130.prepare_endurance SOURCE OUT", file=sys.stderr)
         return 2
     original = Path(argv[1]).read_bytes()
-    pin = hashlib.sha1(f"blob {len(original)}\\0".encode() + original).hexdigest()
+    pin = hashlib.sha1(f"blob {len(original)}\0".encode() + original).hexdigest()
     if pin != BASE_GIT_BLOB_SHA:
         raise RuntimeError(f"Refuse unknown original R125F blob: {pin}")
     derived = build(original.decode("utf-8"))
