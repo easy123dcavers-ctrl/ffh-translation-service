@@ -51,6 +51,7 @@ jobs:
           print('R140_DRIVER',psycopg.__version__)
           assert psycopg.__version__=='3.2.6'
           PY
+      # R140 v2: PostgreSQL UPDATE WHERE state requires narrow SELECT(state).
       - name: Real PostgreSQL transactions, row security and process restart
         shell: bash
         run: |
