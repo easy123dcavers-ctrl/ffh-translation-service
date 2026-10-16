@@ -4,6 +4,10 @@ on:
     branches: [ffh-r110-memory-cgroup-staging-20261016]
     paths:
       - .github/workflows/ffh-r110-memory-isolation.yml
+      - tests/r110.Dockerfile
+      - tests/r110_prefetch_minisbd.py
+      - tests/r110_cgroup_assert.py
+      - tests/r106_localhost_service.py
 permissions:
   contents: read
 jobs:
