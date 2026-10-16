@@ -18,6 +18,6 @@ jobs:
         with:
           python-version: '3.11'
       - name: Compile all changed Python without dependencies
-        run: python -m py_compile app.py translation_cache.py tests/test_r107_request_contract.py tests/r106_localhost_service.py
-      - name: Execute eight offline API body contract tests
-        run: python -m unittest discover -s tests -p test_r107_request_contract.py -v
+        run: python -m py_compile app.py translation_cache.py tests/test_r107_request_contract.py tests/test_r107_route_logic.py tests/r106_localhost_service.py
+      - name: Execute offline API body and route behavior tests
+        run: python -m unittest discover -s tests -p 'test_r107_*.py' -v
