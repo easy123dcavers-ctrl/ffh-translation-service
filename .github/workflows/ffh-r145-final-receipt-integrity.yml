@@ -1,0 +1,138 @@
+name: FFH R145 durable DONE only after final Auth and source release check
+on:
+  push:
+    branches: [ffh-r145-finalize-after-authorization-20261017]
+    paths: [.github/workflows/ffh-r145-final-receipt-integrity.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r145-deferred-final-receipt
+  cancel-in-progress: false
+jobs:
+  genuine-ephemeral-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ffh_r140_ephemeral
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: r140_pg_ci_fake_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ffh_r140_ephemeral"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FFH_R140_EPHEMERAL_ONLY: '1'
+      FFH_R143_EPHEMERAL_ONLY: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Guard branch, compile and install exact PostgreSQL driver
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ffh-r145-finalize-after-authorization-20261017'
+          python -m py_compile r143/private_auth.py r143/online_auth.py r143/ci_auth_fixture.py r143/ci_auth_tests.py r144/guarded_completion.py r144/ci_security_tests.py r145/test_receipt_finalization.py
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+          python -c "import psycopg;assert psycopg.__version__=='3.2.6'"
+      - name: First prove 45 original R139 real PostgreSQL tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m r141.run_real_tests | tee r145-ledger.log
+          grep -F "R141_EXACT_R139_LEDGER_REAL_POSTGRES_PASS_NOT_PRODUCTION" r145-ledger.log
+      - name: Start genuine isolated Supabase GoTrue Auth with disposable accounts
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GoTrue migrations require the auth schema to preexist; this is an empty
+          # synthetic CI database and has no connection to Supabase projects.
+          python - <<'PY'
+          from r140.pg_ephemeral_tests import conn
+          with conn("postgres") as db:
+              db.execute("CREATE SCHEMA IF NOT EXISTS auth")
+              # GoTrue SQL refers to identities/users unqualified. Pin only the
+              # local synthetic postgres login for this disposable database.
+              db.execute("ALTER ROLE postgres IN DATABASE ffh_r140_ephemeral SET search_path TO auth, public")
+          print("R145_ISOLATED_AUTH_NAMESPACE_READY")
+          PY
+          docker pull supabase/gotrue:v2.196.0
+          docker image inspect supabase/gotrue:v2.196.0 --format 'R143_GOTRUE_IMAGE_ID {{.Id}}'
+          docker run -d --name ffh-r145-gotrue --network host \
+            --security-opt no-new-privileges --cap-drop ALL --pids-limit 256 \
+            --memory 512m --memory-swap 512m \
+            -e GOTRUE_API_HOST=0.0.0.0 -e GOTRUE_API_PORT=9999 \
+            -e API_EXTERNAL_URL=http://127.0.0.1:9999 \
+            -e GOTRUE_SITE_URL=http://127.0.0.1:9999 \
+            -e GOTRUE_DB_DRIVER=postgres \
+            -e GOTRUE_DB_DB_NAMESPACE=auth \
+            -e GOTRUE_DB_DATABASE_URL='postgres://postgres:r140_pg_ci_fake_only@127.0.0.1:5432/ffh_r140_ephemeral?sslmode=disable' \
+            -e GOTRUE_JWT_SECRET='R143-Only-Disposable-CI-JWT-Not-A-Production-Secret-9876' \
+            -e GOTRUE_JWT_EXP=3600 -e GOTRUE_JWT_AUD=authenticated \
+            -e GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated \
+            -e GOTRUE_MAILER_AUTOCONFIRM=true \
+            -e GOTRUE_EXTERNAL_EMAIL_ENABLED=true \
+            -e GOTRUE_DISABLE_SIGNUP=false \
+            supabase/gotrue:v2.196.0
+          python - <<'PY'
+          import urllib.request,time
+          for i in range(70):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:9999/health',timeout=2) as r:
+                      if r.status==200:
+                          print('R145_REAL_GOTRUE_HEALTHY')
+                          break
+              except Exception:
+                  time.sleep(2)
+          else:
+              raise SystemExit('Real GoTrue not healthy after 140s; inspect container log')
+          PY
+      - name: Create synthetic FFH authorization registry beside real Auth schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -c "from r143.ci_auth_fixture import setup; setup();print('R145_AUTH_SCHEMA_READY')"
+      # R143 private Auth SQL: narrow server-only definer avoids broad auth table grants.
+      # R144 v3 fixture has self-contained fabricated terms constant; 15 tests.
+      - name: Real GoTrue Auth, protected source, and post-eligibility receipt finalization
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest r143.ci_auth_tests r144.ci_security_tests r145.test_receipt_finalization -v 2>&1 | tee r145-auth.log
+          grep -E 'Ran 30 tests' r145-auth.log
+          grep -E '^OK$' r145-auth.log
+          echo 'R145_REAL_AUTH_PG_RECEIPT_INTEGRITY_PASS_STAGING_ONLY'
+      - name: Preserve logs and exact tested sources
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r145-auth-safe-final-receipts-evidence
+          path: |
+            r145-auth.log
+            r145-ledger.log
+            r145/
+            r144/
+            r143/
+            r142/
+            r141/
+            r140/
+            r139/
+            r136/
+            .github/workflows/ffh-r145-final-receipt-integrity.yml
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Stop disposable Auth container
+        if: always()
+        shell: bash
+        run: |
+          docker logs --tail 65 ffh-r145-gotrue 2>&1 | sed -E 's/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/[REDACTED_EMAIL]/g' || true
+          docker stop ffh-r145-gotrue || true
+          docker rm -f ffh-r145-gotrue || true
