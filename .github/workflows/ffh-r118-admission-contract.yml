@@ -4,6 +4,8 @@ on:
     branches: [ffh-r118-admission-soak-20261016]
     paths:
       - .github/workflows/ffh-r118-admission-contract.yml
+      - app.py
+      - tests/test_r118_admission.py
 permissions:
   contents: read
 jobs:
