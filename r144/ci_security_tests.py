@@ -3,7 +3,8 @@
 Disposable CI only. No real FFH members, models, content, or database writes.
 """
 import unittest
-from r143.ci_auth_tests import auth,URL as ROOT,TEXT,SRC,TERMS
+from r143.ci_auth_tests import auth,URL as ROOT,TEXT,SRC
+TERMS='2026-09-17-v1'
 from r143.online_auth import OnlineAuth,decode_untrusted_session
 from r143.private_auth import PrivateMemberReadOnly
 from r144.guarded_completion import make_guarded_broker
