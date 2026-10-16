@@ -29,12 +29,12 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = ffh-r146-hosted-stage-preflight-20261017
           python -m py_compile r146/hosted_preflight.py
-      - name: Test 10 hosted HTTPS Supabase Auth and REST perimeter conditions
+      - name: Test 13 hosted HTTPS Supabase Auth and REST perimeter conditions
         shell: bash
         run: |
           set -euo pipefail
           python -m unittest -v r146.hosted_preflight 2>&1 | tee r146-hosted-readonly.log
-          grep -E 'Ran 10 tests' r146-hosted-readonly.log
+          grep -E 'Ran 13 tests' r146-hosted-readonly.log
           grep -E '^OK$' r146-hosted-readonly.log
           echo 'R146_HOSTED_STAGING_HTTPS_NEGATIVE_CHECKS_ONLY_NO_MEMBERS_NO_WRITES'
       - name: Preserve exact tested files and scrubbed status logs
