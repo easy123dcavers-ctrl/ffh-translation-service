@@ -4,6 +4,9 @@ on:
     branches: [ffh-r109-pinned-lightweight-build-20261016]
     paths:
       - .github/workflows/ffh-r109-pinned-source-check.yml
+      - tools/r109_prepare_lightweight_source.py
+      - tests/r109_real_argos_flask_smoke.py
+      - tests/test_r109_source_builder.py
 permissions:
   contents: read
 jobs:
