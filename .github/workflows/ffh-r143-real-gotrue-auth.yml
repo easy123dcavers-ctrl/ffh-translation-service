@@ -53,9 +53,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # GoTrue migrations require the auth schema to preexist; this is an empty
+          # synthetic CI database and has no connection to Supabase projects.
+          python - <<'PY'
+          from r140.pg_ephemeral_tests import conn
+          with conn("postgres") as db:
+              db.execute("CREATE SCHEMA IF NOT EXISTS auth")
+          print("R143_ISOLATED_AUTH_NAMESPACE_READY")
+          PY
           docker pull supabase/gotrue:v2.196.0
           docker image inspect supabase/gotrue:v2.196.0 --format 'R143_GOTRUE_IMAGE_ID {{.Id}}'
-          docker run -d --rm --name ffh-r143-gotrue --network host \
+          docker run -d --name ffh-r143-gotrue --network host \
             --security-opt no-new-privileges --cap-drop ALL --pids-limit 256 \
             --memory 512m --memory-swap 512m \
             -e GOTRUE_API_HOST=0.0.0.0 -e GOTRUE_API_PORT=9999 \
@@ -81,7 +89,7 @@ jobs:
               except Exception:
                   time.sleep(2)
           else:
-              raise SystemExit('Real GoTrue not healthy after 140s')
+              raise SystemExit('Real GoTrue not healthy after 140s; inspect container log')
           PY
       - name: Create synthetic FFH authorization registry beside real Auth schema
         shell: bash
@@ -117,5 +125,6 @@ jobs:
         if: always()
         shell: bash
         run: |
-          docker logs --tail 45 ffh-r143-gotrue 2>&1 | sed -E 's/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/[REDACTED_EMAIL]/g' || true
+          docker logs --tail 65 ffh-r143-gotrue 2>&1 | sed -E 's/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+/[REDACTED_EMAIL]/g' || true
           docker stop ffh-r143-gotrue || true
+          docker rm -f ffh-r143-gotrue || true
