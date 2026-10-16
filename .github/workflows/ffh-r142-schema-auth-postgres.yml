@@ -55,6 +55,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ffh-r142-real-pg-synthetic-auth-source
-          path: r142-pg-test.log
+          path: |
+            r142-pg-test.log
+            r142/
+            r141/
+            r140/
+            r139/
+            r136/
+            .github/workflows/ffh-r142-schema-auth-postgres.yml
           retention-days: 7
           if-no-files-found: warn
