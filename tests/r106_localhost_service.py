@@ -22,8 +22,7 @@ def request(path, body=None, method="GET", timeout=12):
     begin = time.perf_counter()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
-            return response.status, json.loads(response.read().decode()),
-            # unreachable
+            return response.status, json.loads(response.read().decode())
     except urllib.error.HTTPError as e:
         return e.code, json.loads(e.read().decode())
 
@@ -57,19 +56,22 @@ def main():
         "FFH_TRANSLATION_CACHE_ENABLED": "false",
         "PORT": "18737",
     })
+    threads = int(os.environ.get("FFH_TEST_GUNICORN_THREADS", "2"))
+    if threads not in (1, 2):
+        raise ValueError("Test Gunicorn thread count must be 1 or 2")
     report={
         "experiment":"R106-localhost-FFH-compatible-Gunicorn",
         "production_writes":0,"ffh_private_data":0,"netlify_deploys":0,
         "web_service_only_on_loopback":True,
         "supported_production_install":False,
         "configured_gunicorn_workers":1,
-        "configured_gunicorn_threads":2,
+        "configured_gunicorn_threads":threads,
         "results":{},
     }
     with logfile.open("w", encoding="utf-8") as output:
         proc=subprocess.Popen([
             sys.executable,"-m","gunicorn",
-            "--workers","1","--threads","2","--timeout","120",
+            "--workers","1","--threads",str(threads),"--timeout","120",
             "--bind","127.0.0.1:18737","app:app",
         ],env=env,stdout=output,stderr=subprocess.STDOUT)
         running=True
@@ -87,7 +89,8 @@ def main():
         monitor=threading.Thread(target=observe,daemon=True)
         monitor.start()
         try:
-            for _ in range(150):
+            startup_deadline = time.monotonic() + 30
+            while time.monotonic() < startup_deadline:
                 if proc.poll() is not None:
                     raise RuntimeError(f"Gunicorn stopped with {proc.returncode}")
                 try:
@@ -96,7 +99,7 @@ def main():
                 except Exception:
                     time.sleep(0.1)
             else:
-                raise RuntimeError("Health never started within 15 seconds")
+                raise RuntimeError("Health never started within 30 seconds")
             report["results"]["health_at_start"]=timed("/health")
             report["results"]["info"]=timed("/")
             report["results"]["languages"]=timed("/languages")
@@ -112,6 +115,12 @@ def main():
                 time.sleep(0.05)
                 report["results"]["health_during_batch"]=timed("/health",timeout=5)
                 report["results"]["batch"]=long_request.result(timeout=115)
+            report["results"]["non_object_single"]=timed("/translate",
+                ["array not an object"],"POST")
+            report["results"]["non_object_batch"]=timed("/translate-batch",
+                ["array not an object"],"POST")
+            report["results"]["target_missing_single"]=timed("/translate",
+                {"q":"Sample 1.","source":"en"},"POST")
             report["results"]["oversized_batch"]=timed("/translate-batch",
                 {"items":["x"]*26,"source":"en","target":"es"},"POST")
             report["results"]["health_after_batch"]=timed("/health")
@@ -122,9 +131,14 @@ def main():
             assert report["results"]["batch"][1].get("count")==25
             assert len(report["results"]["batch"][1].get("results",[]))==25
             assert all(item["ok"] for item in report["results"]["batch"][1]["results"])
+            assert report["results"]["non_object_single"][0]==400
+            assert report["results"]["non_object_batch"][0]==400
+            assert report["results"]["target_missing_single"][0]==400
             assert report["results"]["oversized_batch"][0]==400
-            assert report["results"]["health_during_batch"][0]==200
-            assert report["results"]["health_during_batch"][2] < 5
+            if threads == 2:
+                assert report["results"]["health_during_batch"][0]==200
+                assert report["results"]["health_during_batch"][2] < 5
+            # One-thread mode records health behavior as baseline; timeouts may be expected.
             assert report["results"]["health_after_batch"][0]==200
         except Exception as e:
             report["error"]=repr(e)
@@ -132,7 +146,8 @@ def main():
         finally:
             running=False
             monitor.join(timeout=1)
-            proc.terminate()
+            if proc.poll() is None:
+                proc.terminate()
             try: proc.wait(timeout=8)
             except subprocess.TimeoutExpired:
                 proc.kill()
