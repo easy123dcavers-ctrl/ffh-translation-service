@@ -1,0 +1,46 @@
+name: FFH R114 real protected QA with Arabic and Chinese models
+on:
+  push:
+    branches: [ffh-r114-protected-source-qa-20261016]
+    paths:
+      - .github/workflows/ffh-r114-real-model-protected.yml
+permissions:
+  contents: read
+jobs:
+  real-protected-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target: [ar, zh]
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run 16 unit safeguards without dependencies
+        run: python -m unittest discover -s tests -p test_r114_protected_translation.py -v
+      - name: Clone upstream pinned Argos and create test-only package
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build one model into each disposable container
+        run: docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} --tag ffh-r114-${{ matrix.target }} --file tests/r114.Dockerfile .
+      - name: Exercise real Argos protected translation offline under 512MiB
+        run: |
+          mkdir -p r114-output-${{ matrix.target }}
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --volume "$PWD/r114-output-${{ matrix.target }}:/srv/ffh/r114-output" ffh-r114-${{ matrix.target }}
+      - name: Retain synthetic-only safeguard report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r114-protected-${{ matrix.target }}
+          path: r114-output-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 3
