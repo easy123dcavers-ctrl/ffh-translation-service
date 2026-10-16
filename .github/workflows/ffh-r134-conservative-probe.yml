@@ -27,6 +27,7 @@ jobs:
           python -m unittest discover -s tests -p test_r132_generator.py -v
           python -m unittest discover -s tests -p test_r133_generator.py -v
           python -m unittest discover -s tests -p test_r134_generator.py -v
+          # Validate fixed R134 pinned-source generator before spending Docker build minutes.
           python -m unittest discover -s tests -p test_r132_singleflight_gateway.py -v
           # Burst backpressure uses a bounded 64-slot loopback listen queue.
           python -m unittest discover -s tests -p test_r130_memory_policy.py -v
