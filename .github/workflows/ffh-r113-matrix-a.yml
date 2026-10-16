@@ -1,0 +1,47 @@
+name: FFH R113 worker A isolated 512MiB per-language verification
+on:
+  push:
+    branches: [ffh-r113-model-matrix-a-20261016]
+    paths:
+      - .github/workflows/ffh-r113-matrix-a.yml
+permissions:
+  contents: read
+jobs:
+  model-matrix-a:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target: [fr, ja, de, ar]
+    steps:
+      - name: Checkout test-only R113 branch
+        uses: actions/checkout@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile offline test script
+        run: python -m py_compile tests/r113_single_model_matrix.py
+      - name: Build pinned lightweight Argos test-only source
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Install one target model in a disposable image
+        run: docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} --tag ffh-r113-${{ matrix.target }} --file tests/r113.Dockerfile .
+      - name: Run 512MiB Gunicorn test without network access
+        run: |
+          mkdir -p r113-output-${{ matrix.target }}
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --volume "$PWD/r113-output-${{ matrix.target }}:/srv/ffh/r113-output" \
+            ffh-r113-${{ matrix.target }}
+      - name: Upload synthetic-only memory and integrity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r113-a-${{ matrix.target }}
+          path: r113-output-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 3
