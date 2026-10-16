@@ -1,0 +1,23 @@
+name: FFH R107 dependency-free API shape verification
+on:
+  push:
+    branches: [ffh-r107-api-input-hardening-20261016]
+    paths:
+      - .github/workflows/ffh-r107-stdlib-contract.yml
+permissions:
+  contents: read
+jobs:
+  r107-stdlib-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout isolated branch only
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile all changed Python without dependencies
+        run: python -m py_compile app.py translation_cache.py tests/test_r107_request_contract.py tests/r106_localhost_service.py
+      - name: Execute eight offline API body contract tests
+        run: python -m unittest discover -s tests -p test_r107_request_contract.py -v
