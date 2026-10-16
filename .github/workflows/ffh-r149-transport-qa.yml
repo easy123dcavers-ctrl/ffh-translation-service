@@ -1,0 +1,39 @@
+name: FFH R149 strict loopback stage-token transport security
+on:
+  push:
+    branches: [ffh-r149-ephemeral-real-model-broker-20261017]
+    paths: [.github/workflows/ffh-r149-transport-qa.yml]
+permissions:
+  contents: read
+jobs:
+  negative-mock-loopback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify never production and exact transport source
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r149-ephemeral-real-model-broker-20261017
+          python -m py_compile r149/guarded_transport.py r149/test_transport.py r149/real_model_chain.py
+      - name: Run 12 loopback-only fail-closed tests
+        run: |
+          set -euo pipefail
+          python -m unittest -v r149.test_transport 2>&1 | tee r149-transport-qa.log
+          grep -E 'Ran 12 tests' r149-transport-qa.log
+          grep -E '^OK$' r149-transport-qa.log
+          echo R149_LOOPBACK_SECURITY_12_PASS_NO_LIVE_MODEL
+      - name: Preserve test and exact source evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r149-transport-security-evidence
+          path: |
+            r149-transport-qa.log
+            r149/guarded_transport.py
+            r149/test_transport.py
+          retention-days: 7
+          if-no-files-found: warn
