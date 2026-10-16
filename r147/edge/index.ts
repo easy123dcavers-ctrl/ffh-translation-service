@@ -73,7 +73,7 @@ el('check').addEventListener('click',check);
 Deno.serve((req: Request) => {
  if(req.method!=='GET'&&req.method!=='HEAD')return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
  const key="sb_publishable_ZoYvYGbu9rJlPhHjM-3t3g_MqFWGkL2"; // staging publishable API key, public by design; NEVER service-role
- if(!key||key.split('.').length!==3)return new Response('Staging key unavailable',{status:503});
+ if(!key||!key.startsWith('sb_publishable_'))return new Response('Staging key unavailable',{status:503});
  const body=markup.replace('__PUBLIC_API_KEY__',JSON.stringify(key));
  return new Response(req.method==='HEAD'?null:body,{
   headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store',
