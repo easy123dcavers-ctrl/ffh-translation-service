@@ -39,7 +39,7 @@ def main(argv):
         print("Usage: python -m r134.prepare_probe PINNED_R125F_SOURCE OUTPUT",file=sys.stderr)
         return 2
     raw=Path(argv[1]).read_bytes()
-    actual=hashlib.sha1(f"blob {len(raw)}\\0".encode()+raw).hexdigest()
+    actual=hashlib.sha1(f"blob {len(raw)}\0".encode()+raw).hexdigest()
     if actual != BASE_GIT_BLOB_SHA:
         raise RuntimeError(f"Unknown pinned source {actual}: STOP")
     out=Path(argv[2]);out.parent.mkdir(parents=True,exist_ok=True)
