@@ -22,6 +22,7 @@ jobs:
         run: |
           test "$GITHUB_REF_NAME" = ffh-r147-hosted-member-auth-probe-20261017
           python -m py_compile r147/https_tests.py
+      # R147 v2: recheck staged public publishable-key landing deployment.
       - name: Exercise real hosted HTTPS and JavaScript syntax
         run: |
           set -euo pipefail
