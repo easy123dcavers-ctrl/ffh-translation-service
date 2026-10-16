@@ -202,6 +202,8 @@ def serve_one_round(index,report,deadline):
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             round_report["guarded_lock_idle_at_restart"]=True
+        finally:
+            os.close(lock_fd)
         check(GATEWAY_STATE.begin_drain(timeout=8),
               "A forwarded request was still active at planned shutdown")
         check(GATEWAY_STATE.snapshot()["active"]==0,
@@ -214,8 +216,6 @@ def serve_one_round(index,report,deadline):
         check(http("/health")[0]==503,
               "Readiness health incorrectly reported ready during drain")
         round_report["planned_gap_explicit_503"]=True
-        finally:
-            os.close(lock_fd)
         return round_report
     finally:
         if proc.poll() is None:proc.terminate()
