@@ -1,0 +1,60 @@
+name: FFH R142 synthetic FFH identity and source real PostgreSQL
+on:
+  push:
+    branches: [ffh-r142-schema-matched-auth-20261017]
+    paths: [.github/workflows/ffh-r142-schema-auth-postgres.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r142-schema-auth-pg
+  cancel-in-progress: false
+jobs:
+  ffh-synthetic-auth-schema:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ffh_r140_ephemeral
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: r140_pg_ci_fake_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ffh_r140_ephemeral"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FFH_R140_EPHEMERAL_ONLY: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pin and verify disposable boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r142-schema-matched-auth-20261017
+          test "$FFH_R140_EPHEMERAL_ONLY" = 1
+          python -m py_compile r142/schema_matched.py r142/pg_identity_source_tests.py r142/runner.py
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+          python -c "import psycopg;assert psycopg.__version__=='3.2.6'"
+      - name: Real PostgreSQL ledger 45 plus synthetic FFH identity/source 36
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m r142.runner | tee r142-pg-test.log
+          grep -F "R142_POSTGRES_SYNTHETIC_SCHEMA_PASS_NOT_LIVE_SUPABASE_AUTH" r142-pg-test.log
+          grep -F "'run': 81, 'failures': 0, 'errors': 0, 'passed': True" r142-pg-test.log
+      - name: Retain test evidence on any result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r142-real-pg-synthetic-auth-source
+          path: r142-pg-test.log
+          retention-days: 7
+          if-no-files-found: warn
