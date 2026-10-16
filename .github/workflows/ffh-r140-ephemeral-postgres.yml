@@ -51,13 +51,13 @@ jobs:
           print('R140_DRIVER',psycopg.__version__)
           assert psycopg.__version__=='3.2.6'
           PY
-      # R140 v2: PostgreSQL UPDATE WHERE state requires narrow SELECT(state).
+      # R140 v3: adds lost COMMIT acknowledgment + quota-denied retry.\n      # R140 v2: PostgreSQL UPDATE WHERE state requires narrow SELECT(state).
       - name: Real PostgreSQL transactions, row security and process restart
         shell: bash
         run: |
           set -euo pipefail
           python -m r140.pg_ephemeral_tests -v 2>&1 | tee r140-pg-test.log
-          grep -E 'Ran 20 tests' r140-pg-test.log
+          grep -E 'Ran 22 tests' r140-pg-test.log
           grep -E '^OK$' r140-pg-test.log
           echo 'R140_REAL_POSTGRES_PASS_NOT_LIVE_MEMBER_AUTH_OR_PRODUCTION'
       - name: Preserve test output on failure or success
