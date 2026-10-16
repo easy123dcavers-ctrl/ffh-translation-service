@@ -1,0 +1,41 @@
+name: FFH R147 hosted staging login and authorization perimeter
+on:
+  push:
+    branches: [ffh-r147-hosted-member-auth-probe-20261017]
+    paths: [.github/workflows/ffh-r147-hosted-auth-probe.yml]
+permissions:
+  contents: read
+jobs:
+  staged-real-https:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      FFH_R147_STAGE_ONLY: '1'
+      FFH_STAGING_PUBLISHABLE_KEY: sb_publishable_ZoYvYGbu9rJlPhHjM-3t3g_MqFWGkL2
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify staging-only branch
+        run: |
+          test "$GITHUB_REF_NAME" = ffh-r147-hosted-member-auth-probe-20261017
+          python -m py_compile r147/https_tests.py
+      - name: Exercise real hosted HTTPS and JavaScript syntax
+        run: |
+          set -euo pipefail
+          python -m unittest -v r147.https_tests 2>&1 | tee r147-hosted-https.log
+          grep -E 'Ran 12 tests' r147-hosted-https.log
+          grep -E '^OK$' r147-hosted-https.log
+          echo 'R147_HOSTED_STAGING_AUTH_PAGES_AND_NEGATIVE_RPCS_PASS_NO_REAL_MEMBER_SIGNIN_YET'
+      - name: Preserve tested source and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r147-staging-auth-page-https-evidence
+          path: |
+            r147-hosted-https.log
+            r147/
+          retention-days: 7
+          if-no-files-found: warn
