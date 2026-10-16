@@ -1,0 +1,48 @@
+name: FFH R121c German 512MiB staging quarantine endurance
+on:
+  push:
+    branches: [ffh-r121c-german-extended-safe-20261016]
+    paths:
+      - .github/workflows/ffh-r121c-german-extended.yml
+permissions:
+  contents: read
+jobs:
+  german-batch1-endurance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python source preflight
+        run: python -m py_compile app.py tests/r121c_extended_migration_soak.py
+      - name: Fetch immutable upstream and create lightweight source build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build German model with low-memory inference batch 1
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r121c-de --file tests/r121c.Dockerfile .
+      - name: Run authenticated 2-minute guarded quarantine memory stress
+        run: |
+          mkdir -p r121c-de
+          PRIVATE_TEST_TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$PRIVATE_TEST_TOKEN" \
+            --env "R119_TEST_MAX_REQUESTS=12" \
+            --volume "$PWD/r121c-de:/srv/ffh/r118-output" \
+            ffh-r121c-de
+          unset PRIVATE_TEST_TOKEN
+      - name: Retain synthetic diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r121c-german-safe-soak
+          path: r121c-de/
+          if-no-files-found: warn
+          retention-days: 3
