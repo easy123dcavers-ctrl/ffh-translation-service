@@ -1,0 +1,61 @@
+name: FFH R124b independent repeat Korean Vietnamese safe profiles
+on:
+  push:
+    branches: [ffh-r124b-korean-vietnamese-headroom20-20261016]
+    paths: [.github/workflows/ffh-r124b-safe-repeat.yml]
+permissions:
+  contents: read
+jobs:
+  cold-second-safe-profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - profile: ko-batch1-beam2
+            target: ko
+            batch: 1
+            beam: 2
+          - profile: vi-batch1-beam4
+            target: vi
+            batch: 1
+            beam: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact 512MiB cgroup 20 pct floor and test syntax
+        run: |
+          python -m py_compile tests/r124_eight_language_gateway.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Verify Argos pinned source for independent fresh build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build same selected safe profile with observed model hash check
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
+            --build-arg FFH_TEST_BATCH=${{ matrix.batch }} \
+            --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
+            --tag ffh-r124b-confirm-${{ matrix.profile }} --file tests/r124.Dockerfile .
+      - name: Verify real cold 512MiB gateway and four restarts with >=20pct free
+        run: |
+          mkdir -p r124b-confirm-${{ matrix.profile }}
+          TEST_TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TEST_TOKEN" \
+            --volume "$PWD/r124b-confirm-${{ matrix.profile }}:/srv/ffh/r118-output" \
+            ffh-r124b-confirm-${{ matrix.profile }}
+          unset TEST_TOKEN
+      - name: Preserve all isolated evidence including possible strict holds
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r124b-confirm-${{ matrix.profile }}
+          path: r124b-confirm-${{ matrix.profile }}/
+          if-no-files-found: warn
+          retention-days: 5
