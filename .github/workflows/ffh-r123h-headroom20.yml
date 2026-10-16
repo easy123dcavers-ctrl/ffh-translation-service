@@ -1,0 +1,61 @@
+name: FFH R123H hard 20 percent memory headroom verification
+on:
+  push:
+    branches: [ffh-r123h-headroom20-20261016]
+    paths:
+      - .github/workflows/ffh-r123h-headroom20.yml
+permissions:
+  contents: read
+jobs:
+  twenty-percent-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and verify exact integer 20 percent acceptance checks
+        run: |
+          python -m py_compile tests/r123h_memory_policy.py tests/r123_gateway_real_soak.py tests/test_r123h_20pct_headroom.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+
+  real-german-512m:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify strict 20 percent policy and source syntax
+        run: |
+          python -m py_compile app.py tests/r123h_memory_policy.py tests/r123_readiness_gateway.py tests/r123_gateway_real_soak.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Check exact pinned Argos revision and prepare isolated lightweight source
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build isolated German single-model source-pinned image
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r123h-de --file tests/r123.Dockerfile .
+      - name: Run 512 MiB gateway and hard 20 percent headroom gate with no runtime network
+        run: |
+          mkdir -p r123h-results
+          TEST_TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TEST_TOKEN" \
+            --volume "$PWD/r123h-results:/srv/ffh/r118-output" \
+            ffh-r123h-de
+          unset TEST_TOKEN
+      - name: Preserve raw summary and synthetic Gunicorn logs regardless of result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r123h-20pct-memory-gate
+          path: r123h-results/
+          if-no-files-found: warn
+          retention-days: 3
