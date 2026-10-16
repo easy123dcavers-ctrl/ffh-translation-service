@@ -32,7 +32,8 @@ def prepare(original: str) -> str:
             "sigkill_unknown_verified":0,"rounds":[],"items":0,''')
     s = replace_once(s, '        for index,target in enumerate(SEQUENCE):',
         '''        for index,target in enumerate(itertools.cycle(SEQUENCE)):
-            if index >= len(SEQUENCE)*2 and time.monotonic() >= end:
+            if (index >= len(SEQUENCE)*2 and time.monotonic() >= end
+                    and report["sigkill_unknown_verified"] == 1):
                 break''')
     s = replace_once(s, '                cwd=ROOT,env=env,stdout=out,stderr=subprocess.STDOUT)',
         '                cwd=ROOT,env=env,stdout=out,stderr=subprocess.STDOUT,\n                start_new_session=True)')
