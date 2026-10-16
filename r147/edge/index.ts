@@ -1,6 +1,6 @@
 // R147 private FFH stage: public static login landing only. No model access.
 const origin = 'https://hlsjzjnondimwhqbgjqm.supabase.co';
-const markup = String.raw\`<!doctype html><html lang="en"><head><meta charset="utf-8">
+const markup = String.raw`<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>FFH staging Member check</title><style>
 :root{color-scheme:light dark;font-family:system-ui,sans-serif}
@@ -69,7 +69,7 @@ el('form').addEventListener('submit',async event=>{
  finally{el('send').disabled=false}
 });
 el('check').addEventListener('click',check);
-</script></body></html>\`;
+</script></body></html>`;
 Deno.serve((req: Request) => {
  if(req.method!=='GET'&&req.method!=='HEAD')return new Response(null,{status:405,headers:{Allow:'GET, HEAD'}});
  const key=Deno.env.get('SUPABASE_ANON_KEY'); // public legacy anon key, NOT a secret/service role
