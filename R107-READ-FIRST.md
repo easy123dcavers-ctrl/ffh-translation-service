@@ -1,4 +1,15 @@
 # FFH R107 — Guarded API and local-service QA handoff
+
+## VERIFIED UPDATE — 19 OFFLINE TESTS PASSED (2026-10-16)
+
+- R107 isolated CI run: https://github.com/easy123dcavers-ctrl/ffh-translation-service/actions/runs/38835225954
+- Result: **PASS — 19 tests**, explicitly confirmed in GitHub logs (`Ran 19 tests`, `OK`). Syntax compilation of app.py, translation_cache.py, and all changed test files also passed.
+- Breakdown: 8 JSON parser/route-guard contract tests plus 11 executable route-logic tests using mocked Flask/request/translation functions. These tests run real extracted app.py route function code, without importing Flask or Argos and without contacting production.
+- Earlier 8-test run: https://github.com/easy123dcavers-ctrl/ffh-translation-service/actions/runs/38835131045 (PASS).
+- Source additions: `tests/test_r107_route_logic.py` and `.github/workflows/ffh-r107-stdlib-contract.yml`.
+- **Not tested:** actual Flask request integration, the Gunicorn process, a 512 MiB environment, the low-memory unsupported Argos modification, actual translation quality, or concurrent health checks. Thus **NOT RELEASE READY**.
+- The prior notes below predate this run: any prior claim that the eight offline tests were `not executed` is superseded by the verified 19-test result above. **The R106 localhost integration test remains unexecuted.**
+
 Date: 2026-10-16
 
 ## STATUS — NO PRODUCTION CHANGES
