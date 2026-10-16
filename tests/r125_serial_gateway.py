@@ -32,6 +32,7 @@ class Readiness:
         self.active = 0
         self.admitted_total = 0
         self.rejected_draining = 0
+        self.rejected_busy = 0
         self.transport_errors = 0
         self.selected_target = None
         self.switch_denied = 0
@@ -53,13 +54,21 @@ class Readiness:
             self.switch_denied += 1
 
     def begin(self):
+        """Atomically accept ONE inflight batch or return busy/draining status.
+
+        The slot protects a CPU-constrained, single-resident-model backend.
+        Never rely on scheduler sleep or backend flock as sole admission gate.
+        """
         with self.cv:
             if not self.ready:
                 self.rejected_draining += 1
-                return False
-            self.active += 1
+                return "draining"
+            if self.active:
+                self.rejected_busy += 1
+                return "busy"
+            self.active = 1
             self.admitted_total += 1
-            return True
+            return "accepted"
 
     def finish(self):
         with self.cv:
@@ -95,6 +104,7 @@ class Readiness:
             return {"ready": self.ready, "active": self.active,
                     "admitted_total": self.admitted_total,
                     "rejected_draining": self.rejected_draining,
+                    "rejected_busy": self.rejected_busy,
                     "transport_errors": self.transport_errors,
                     "selected_target": self.selected_target,
                     "switch_denied": self.switch_denied}
@@ -151,11 +161,18 @@ def make_handler(readiness, backend_port, stage_token):
             if not hmac.compare_digest(self.headers.get("Authorization", ""), expected):
                 self.answer(401, {"error": "unauthorized"})
                 return
-            if not readiness.begin():
+            admission = readiness.begin()
+            if admission == "draining":
                 self.answer(503, {"error": "service draining",
                                   "retryable": True, "retry_after_seconds": 2},
                             retry_after=2)
                 return
+            if admission == "busy":
+                self.answer(429, {"error": "translator busy",
+                                  "retryable": True, "retry_after_seconds": 2},
+                            retry_after=2)
+                return
+            assert admission == "accepted"
             connection = None
             try:
                 raw_length = self.headers.get("Content-Length", "")
