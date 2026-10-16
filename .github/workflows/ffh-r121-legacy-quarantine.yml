@@ -1,0 +1,32 @@
+name: FFH R121 staging legacy-bypass quarantine security contracts
+on:
+  push:
+    branches: [ffh-r121-legacy-quarantine-security-audit-20261016]
+    paths:
+      - .github/workflows/ffh-r121-legacy-quarantine.yml
+permissions:
+  contents: read
+jobs:
+  isolated-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install only Flask, never a member model
+        run: python -m pip install --disable-pip-version-check 'Flask>=3.1,<4'
+      - name: Compile staged API and quarantine tests
+        run: python -m py_compile app.py tests/test_r121_legacy_quarantine.py
+      - name: Verify both legacy API paths cannot bypass guarded staging
+        run: python -m unittest discover -s tests -p 'test_r121_legacy_quarantine.py' -v
+      - name: Verify prior offline security integrity and admission controls
+        run: |
+          python -m unittest discover -s tests -p 'test_r120_cross_worker.py' -v
+          python -m unittest discover -s tests -p 'test_r119_auth_privacy.py' -v
+          python -m unittest discover -s tests -p 'test_r119_retry_contract.py' -v
+          python -m unittest discover -s tests -p 'test_r119_model_tree.py' -v
+          python -m unittest discover -s tests -p 'test_r118_admission.py' -v
+          python -m unittest discover -s tests -p 'test_r116_guarded_api.py' -v
+          python -m unittest discover -s tests -p 'test_r108_flask_http.py' -v
