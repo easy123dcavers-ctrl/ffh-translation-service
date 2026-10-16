@@ -1,0 +1,56 @@
+name: FFH R118 one-in-flight guarded API 512MiB soak
+on:
+  push:
+    branches: [ffh-r118-admission-soak-20261016]
+    paths:
+      - .github/workflows/ffh-r118-512m-soak.yml
+permissions:
+  contents: read
+jobs:
+  single-admission-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - target: de
+            argos_batch: 8
+            argos_beam: 4
+          - target: ko
+            argos_batch: 1
+            argos_beam: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Python application and test syntax
+        run: python -m py_compile app.py protected_translation.py tests/r118_admission_soak.py
+      - name: Build pinned and attributable lightweight Argos test source
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build isolated single-target model and prefetch offline assets
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
+            --build-arg FFH_TEST_BATCH=${{ matrix.argos_batch }} \
+            --build-arg FFH_TEST_BEAM=${{ matrix.argos_beam }} \
+            --tag ffh-r118-${{ matrix.target }} --file tests/r118.Dockerfile .
+      - name: Exercise 120-second guarded admission soak under 512MiB
+        run: |
+          mkdir -p r118-${{ matrix.target }}
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 \
+            --volume "$PWD/r118-${{ matrix.target }}:/srv/ffh/r118-output" \
+            ffh-r118-${{ matrix.target }}
+      - name: Preserve resource-only and provisional output evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r118-admission-${{ matrix.target }}
+          path: r118-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 3
