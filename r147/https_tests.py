@@ -13,9 +13,9 @@ def api(path,method='GET',body=None,headers=None):
     req=urllib.request.Request(URL+path,data=body,method=method,headers=h)
     try:
         with urllib.request.build_opener(NoRedirect()).open(req,timeout=12) as r:
-            return r.status,dict(r.headers),r.read(250000)
+            return r.status,{k.lower():v for k,v in r.headers.items()},r.read(250000)
     except urllib.error.HTTPError as e:
-        return e.code,dict(e.headers),e.read(30000)
+        return e.code,{k.lower():v for k,v in e.headers.items()},e.read(30000)
 class LiveStage(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -26,11 +26,11 @@ class LiveStage(unittest.TestCase):
         self.assertEqual(self.status,200)
         self.assertIn(b'FFH staging account test',self.page)
     def test_02_no_cache(self):
-        self.assertIn('no-store',self.headers.get('Cache-Control',''))
+        self.assertIn('no-store',self.headers.get('cache-control',''))
     def test_03_browser_frame_denied(self):
-        self.assertEqual(self.headers.get('X-Frame-Options'),'DENY')
+        self.assertEqual(self.headers.get('x-frame-options'),'DENY')
     def test_04_csp_same_project_only(self):
-        value=self.headers.get('Content-Security-Policy','')
+        value=self.headers.get('content-security-policy','')
         self.assertIn("default-src 'none'",value)
         self.assertIn("frame-ancestors 'none'",value)
     def test_05_html_only_no_password(self):
