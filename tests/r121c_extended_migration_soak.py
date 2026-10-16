@@ -22,7 +22,7 @@ MIB=1024*1024
 MEMORY_LIMIT=512*MIB
 SOAK_SECONDS=120
 MAX_WORKER_REQUESTS=int(os.environ.get("R119_TEST_MAX_REQUESTS","0"))
-if MAX_WORKER_REQUESTS not in (12,24):
+if MAX_WORKER_REQUESTS not in (24,48):
     raise ValueError("R119b requires precisely 12 or 24 worker requests")
 START=time.monotonic()
 
