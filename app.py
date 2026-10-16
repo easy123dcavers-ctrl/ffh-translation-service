@@ -1,4 +1,5 @@
 import os
+import hmac
 from pathlib import Path
 from threading import BoundedSemaphore
 
@@ -39,6 +40,9 @@ GUARDED_API_ENABLED = os.environ.get(
 # R118: process-local admission; only valid with one Gunicorn worker.
 GUARDED_CAPACITY = BoundedSemaphore(value=1)
 MAX_GUARDED_BODY_BYTES = 128 * 1024
+# A staging credential must be supplied through runtime secret configuration.
+GUARDED_STAGE_TOKEN = os.environ.get("FFH_GUARDED_STAGING_TOKEN", "")
+MIN_STAGE_TOKEN_LENGTH = 32
 GUARDED_LINK = re.compile(
     r"(?i)(?:https?://|www\.)|[\w.+-]+@[\w.-]+\.[a-z]{2,}"
 )
@@ -164,6 +168,27 @@ def translate_batch():
 # Experimental isolated-stage-only endpoints. Do not enable on Render production.
 # They do not call translate_text() or the optional shared translation cache:
 # private/member text MUST NOT be placed into a cross-request cache.
+@app.after_request
+def suppress_guarded_http_caches(response):
+    """Guarded responses may contain private text: never cache them."""
+    if request.path.startswith("/experimental/guarded-"):
+        response.headers["Cache-Control"] = "no-store, private, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+def guarded_auth_error():
+    # Both disabled and insecurely configured routes are unavailable.
+    if not GUARDED_API_ENABLED or len(GUARDED_STAGE_TOKEN) < MIN_STAGE_TOKEN_LENGTH:
+        return jsonify({"error": "not found"}), 404
+    candidate = request.headers.get("Authorization", "")
+    expected = "Bearer " + GUARDED_STAGE_TOKEN
+    if not hmac.compare_digest(candidate, expected):
+        return jsonify({"error": "unauthorized"}), 401
+    return None
+
+
 def guarded_input_size_error():
     """Do not read potentially unbounded request bodies."""
     if request.content_length is None:
@@ -197,8 +222,9 @@ def guarded_draft(q, target):
 
 @app.post("/experimental/guarded-translate")
 def experimental_guarded_translate():
-    if not GUARDED_API_ENABLED:
-        return jsonify({"error": "not found"}), 404
+    auth_error = guarded_auth_error()
+    if auth_error is not None:
+        return auth_error
     size_error = guarded_input_size_error()
     if size_error is not None:
         return size_error
@@ -214,8 +240,9 @@ def experimental_guarded_translate():
 
 @app.post("/experimental/guarded-translate-batch")
 def experimental_guarded_translate_batch():
-    if not GUARDED_API_ENABLED:
-        return jsonify({"error": "not found"}), 404
+    auth_error = guarded_auth_error()
+    if auth_error is not None:
+        return auth_error
     size_error = guarded_input_size_error()
     if size_error is not None:
         return size_error
