@@ -19,10 +19,12 @@ COPY r109-light/ /tmp/r109-light/
 COPY app.py install_models.py translation_cache.py ./
 COPY tests/r106_localhost_service.py tests/r106_localhost_service.py
 COPY tests/r110_cgroup_assert.py tests/r110_cgroup_assert.py
+COPY tests/r110_prefetch_minisbd.py tests/r110_prefetch_minisbd.py
 
 RUN python -m pip install --no-cache-dir --disable-pip-version-check \
     /tmp/r109-light 'Flask>=3.1,<4' 'gunicorn>=23,<24' \
     && python -m pip check \
-    && python install_models.py
+    && python install_models.py \
+    && python tests/r110_prefetch_minisbd.py
 
 CMD ["python", "tests/r110_cgroup_assert.py"]
