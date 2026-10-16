@@ -1,0 +1,53 @@
+name: FFH R121d German guarded worker-recycle reliability
+on:
+  push:
+    branches: [ffh-r121d-german-recycle-20261016]
+    paths:
+      - .github/workflows/ffh-r121d-german-recycle.yml
+permissions:
+  contents: read
+jobs:
+  recycle-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        recycle_limit: [24, 48]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile staged API/test scripts
+        run: python -m py_compile app.py tests/r121c_extended_migration_soak.py
+      - name: Fetch pinned upstream Argos and prepare attributable test build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build isolated German Argos batch1 with guarded staging quarantine
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r121d-de --file tests/r121c.Dockerfile .
+      - name: Exercise real 512MiB German 2-minute recycle and health validation
+        run: |
+          mkdir -p r121d-${{ matrix.recycle_limit }}
+          TEST_TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TEST_TOKEN" \
+            --env "R119_TEST_MAX_REQUESTS=${{ matrix.recycle_limit }}" \
+            --volume "$PWD/r121d-${{ matrix.recycle_limit }}:/srv/ffh/r118-output" \
+            ffh-r121d-de
+          unset TEST_TOKEN
+      - name: Save synthetic-only evidence including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r121d-german-recycle-${{ matrix.recycle_limit }}
+          path: r121d-${{ matrix.recycle_limit }}/
+          if-no-files-found: warn
+          retention-days: 3
