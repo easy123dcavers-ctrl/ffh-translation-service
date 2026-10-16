@@ -1,0 +1,63 @@
+name: FFH R125e 0.1CPU Render Free synthetic single model benchmark
+on:
+  push:
+    branches: [ffh-r125e-free-cpu-probe-20261016]
+    paths: [.github/workflows/ffh-r125e-free-cpu.yml]
+permissions:
+  contents: read
+jobs:
+  free-cpu-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 32
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Preflight strict 20pct RAM and CPU benchmark syntax
+        run: |
+          python -m py_compile tests/r125e_free_cpu.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Pinned Argos source and standalone lightweight testing build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build a single verified Spanish model image, never deploy
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=es \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r125e-es --file tests/r125e.Dockerfile .
+      - name: Simulate real Free CPU quota, current production one Gunicorn thread
+        run: |
+          mkdir -p r125e-thread1
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m \
+            --cpus 0.1 --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env R125E_GUNICORN_THREADS=1 \
+            --volume "$PWD/r125e-thread1:/srv/ffh/r125e-output" \
+            ffh-r125e-es
+          unset TOKEN
+      - name: Simulate same 0.1 CPU, experimental two Gunicorn threads
+        if: always()
+        run: |
+          mkdir -p r125e-thread2
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m \
+            --cpus 0.1 --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env R125E_GUNICORN_THREADS=2 \
+            --volume "$PWD/r125e-thread2:/srv/ffh/r125e-output" \
+            ffh-r125e-es
+          unset TOKEN
+      - name: Keep all synthetic observations and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r125e-render-free-cpu-observations
+          path: |
+            r125e-thread1/
+            r125e-thread2/
+          if-no-files-found: warn
+          retention-days: 5
