@@ -94,6 +94,15 @@ def main():
         must(held[0]==200 and held[1]["status"]=="held" and
              held[1]["draft"] is None,"URL was not held without a draft")
         report["held_url_without_draft"]=True
+        report["warm_first"] = os.environ.get("R121_WARM_FIRST","false") == "true"
+        if report["warm_first"]:
+            warm = get("/experimental/guarded-translate",{
+                "q":"The imaginary notebook has seven blank pages.",
+                "source":"en","target":report["target"]},timeout=95)
+            must(warm[0]==200 and warm[1].get("status") in
+                 ("held","provisional_candidate"),
+                 "Guarded warm-up request failed")
+            report["warm_first_status"]=warm[1]["status"]
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             pending=pool.submit(get,"/experimental/guarded-translate-batch",sample)
             time.sleep(.05)
