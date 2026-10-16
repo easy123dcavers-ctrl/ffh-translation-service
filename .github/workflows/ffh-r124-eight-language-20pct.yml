@@ -1,4 +1,4 @@
-name: FFH R124 8-language strict 20 percent memory gate
+name: FFH R124 seven-language 20pct retest (Spanish separately)
 on:
   push:
     branches: [ffh-r124-eight-language-20pct-20261016]
@@ -15,9 +15,6 @@ jobs:
       max-parallel: 4
       matrix:
         include:
-          - target: es
-            batch: 8
-            beam: 4
           - target: fr
             batch: 8
             beam: 4
@@ -48,7 +45,7 @@ jobs:
           python-version: '3.11'
       - name: Verify 20 percent is a hard gate, not merely reporting
         run: |
-          python -m py_compile tests/r123_gateway_real_soak.py tests/r123h_memory_policy.py
+          python -m py_compile tests/r124_eight_language_gateway.py tests/r123h_memory_policy.py
           python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
       - name: Fetch exact pinned Argos source and prepare test-only light build
         run: |
@@ -60,7 +57,7 @@ jobs:
           docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
             --build-arg FFH_TEST_BATCH=${{ matrix.batch }} \
             --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
-            --tag ffh-r124-${{ matrix.target }} --file tests/r123.Dockerfile .
+            --tag ffh-r124-${{ matrix.target }} --file tests/r124.Dockerfile .
       - name: 512MiB hard offline gateway, 4 master lifecycles, min 20 percent headroom
         run: |
           mkdir -p r124-${{ matrix.target }}
