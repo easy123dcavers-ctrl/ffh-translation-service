@@ -44,7 +44,7 @@ def main(argv: list[str]) -> int:
         print("Usage: python -m r131.prepare_endurance PINNED_R125F_SOURCE OUT",file=sys.stderr)
         return 2
     original=Path(argv[1]).read_bytes()
-    digest=hashlib.sha1(f"blob {len(original)}\\0".encode()+original).hexdigest()
+    digest=hashlib.sha1(f"blob {len(original)}\0".encode()+original).hexdigest()
     if digest != BASE_GIT_BLOB_SHA:
         raise RuntimeError(f"R131 REFUSES source blob change: {digest}")
     result=build(original.decode("utf-8"))
