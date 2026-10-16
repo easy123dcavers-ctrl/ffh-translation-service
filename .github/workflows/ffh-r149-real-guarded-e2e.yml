@@ -1,4 +1,5 @@
 name: FFH R149 real GoTrue Postgres guarded Argos isolated end-to-end
+# R149 second attempt: avoid imported TestCase fixture auto-discovery
 on:
   push:
     branches: [ffh-r149-ephemeral-real-model-broker-20261017]
