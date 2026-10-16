@@ -1,0 +1,64 @@
+name: FFH R141 exact original R139 ledger real PostgreSQL
+on:
+  push:
+    branches: [ffh-r141-original-ledger-parity-20261017]
+    paths: [.github/workflows/ffh-r141-original-ledger-parity.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r141-exact-r139-ledger-postgres
+  cancel-in-progress: false
+jobs:
+  exact-original-ledger:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ffh_r140_ephemeral
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: r140_pg_ci_fake_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ffh_r140_ephemeral"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      FFH_R140_EPHEMERAL_ONLY: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Enforce isolated CI and compile exact-source ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ffh-r141-original-ledger-parity-20261017'
+          test "$FFH_R140_EPHEMERAL_ONLY" = 1
+          python -m py_compile r136/broker.py r139/identity_hash.py r139/postgres_ledger.py r140/pg_real.py r141/pg_original_parity_tests.py r141/run_real_tests.py
+      - name: Pin psycopg PostgreSQL adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+          python -c "import psycopg;assert psycopg.__version__=='3.2.6'"
+      - name: Run 45 independent real PostgreSQL reference and original-ledger tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m r141.run_real_tests | tee r141-actual-pg-test.log
+          grep -F "R141_EXACT_R139_LEDGER_REAL_POSTGRES_PASS_NOT_PRODUCTION" r141-actual-pg-test.log
+          grep -F "'run': 45, 'failures': 0, 'errors': 0, 'passed': True" r141-actual-pg-test.log
+      - name: Preserve evidence even if the test fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r141-byte-exact-r139-original-postgres-parity
+          path: r141-actual-pg-test.log
+          retention-days: 7
+          if-no-files-found: warn
