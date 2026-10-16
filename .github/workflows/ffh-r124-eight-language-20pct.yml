@@ -1,0 +1,81 @@
+name: FFH R124 8-language strict 20 percent memory gate
+on:
+  push:
+    branches: [ffh-r124-eight-language-20pct-20261016]
+    paths:
+      - .github/workflows/ffh-r124-eight-language-20pct.yml
+permissions:
+  contents: read
+jobs:
+  eight-target-hard-limit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - target: es
+            batch: 8
+            beam: 4
+          - target: fr
+            batch: 8
+            beam: 4
+          - target: ja
+            batch: 8
+            beam: 4
+          - target: ar
+            batch: 8
+            beam: 4
+          - target: tl
+            batch: 1
+            beam: 4
+          - target: ko
+            batch: 1
+            beam: 4
+          - target: vi
+            batch: 8
+            beam: 4
+          - target: zh
+            batch: 8
+            beam: 4
+    steps:
+      - name: Checkout isolated test branch only
+        uses: actions/checkout@v4
+      - name: Python 3.11 for policy preflight
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify 20 percent is a hard gate, not merely reporting
+        run: |
+          python -m py_compile tests/r123_gateway_real_soak.py tests/r123h_memory_policy.py
+          python -m unittest discover -s tests -p test_r123h_20pct_headroom.py -v
+      - name: Fetch exact pinned Argos source and prepare test-only light build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Install exactly one target language with verified prior tree and offline tokenizer
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} \
+            --build-arg FFH_TEST_BATCH=${{ matrix.batch }} \
+            --build-arg FFH_TEST_BEAM=${{ matrix.beam }} \
+            --tag ffh-r124-${{ matrix.target }} --file tests/r123.Dockerfile .
+      - name: 512MiB hard offline gateway, 4 master lifecycles, min 20 percent headroom
+        run: |
+          mkdir -p r124-${{ matrix.target }}
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r124-${{ matrix.target }}:/srv/ffh/r118-output" \
+            ffh-r124-${{ matrix.target }}
+          unset TOKEN
+      - name: Preserve test-only pass and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r124-headroom20-${{ matrix.target }}
+          path: r124-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 5
