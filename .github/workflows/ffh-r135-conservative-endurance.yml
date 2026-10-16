@@ -1,0 +1,148 @@
+name: FFH R135 conservative 1x1x1 real nine-language 30min
+on:
+  push:
+    branches: [ffh-r135-conservative-endurance-20261017]
+    paths: [.github/workflows/ffh-r135-conservative-endurance.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r135-conservative-isolated
+  cancel-in-progress: false
+jobs:
+  nine-language-no-runtime-rehash:
+    runs-on: ubuntu-latest
+    timeout-minutes: 105
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify unchanged R125F source, R131 transformations and 10pct boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ffh-r135-conservative-endurance-20261017'
+          test "$(git hash-object tests/r125f_bounded_switch.py)" = 'a73832312115cc02c019cb1fa2e8edd457c7654b'
+          python -m unittest discover -s tests -p test_r131_generator.py -v
+          python -m unittest discover -s tests -p test_r132_generator.py -v
+          python -m unittest discover -s tests -p test_r134_generator.py -v
+          python -m unittest discover -s tests -p test_r135_generator.py -v
+          python -m unittest discover -s tests -p test_r132_singleflight_gateway.py -v
+          # Burst backpressure uses a bounded 64-slot loopback listen queue.
+          python -m unittest discover -s tests -p test_r130_memory_policy.py -v
+          python -m unittest discover -s tests -p test_r125_router_contract.py -v
+      - name: Independently pin lightweight upstream Argos
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = '63b84ecb46c740c7a7c066d58636434d3e893ebf'
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Generate model-switching runner and offline verified Docker image
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m r135.prepare_endurance tests/r125f_bounded_switch.py tests/r135_endurance.py
+          python -m r134.prepare_probe tests/r125f_bounded_switch.py tests/r134_probe.py
+          python -m py_compile tests/r135_endurance.py
+          python -m py_compile tests/r134_probe.py
+          python - <<'PY'
+          from pathlib import Path
+          s=Path("tests/r125f.Dockerfile").read_text()
+          a="COPY tests/r125f_bounded_switch.py tests/r125f_bounded_switch.py"
+          b='CMD ["python", "tests/r125f_bounded_switch.py"]'
+          assert s.count(a)==1 and s.count(b)==1, "Pinned Docker file changed"
+          s=s.replace(a,'COPY tests/r135_endurance.py tests/r135_endurance.py\nCOPY tests/r134_probe.py tests/r134_probe.py\nCOPY tests/r130_memory_policy.py tests/r130_memory_policy.py')
+          s=s.replace(b,'CMD ["python", "tests/r135_endurance.py"]')
+          Path("tests/r135.Dockerfile").write_text(s)
+          PY
+          grep -n 'r130_memory_policy.py' tests/r135.Dockerfile
+      - name: SHA256-verify ALL nine installed real Argos model trees during Docker build
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag ffh-r135-nine-lang-conservative --file tests/r135.Dockerfile .
+          docker image inspect ffh-r135-nine-lang-conservative --format 'R132_FULL_IMAGE_BYTES {{.Size}}'
+      - name: Short real es-ko probe must PASS before longer nine-model test
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p r135-preflight
+          chmod 0777 r135-preflight
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          trap 'unset TOKEN' EXIT
+          docker run --rm --network none \
+            --memory 512m --memory-swap 512m --cpus 0.1 \
+            --pids-limit 128 --security-opt no-new-privileges --cap-drop ALL \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" --env R125F_MAX_BATCHES=2 \
+            --volume "$PWD/r135-preflight:/srv/ffh/r125-output" \
+            ffh-r135-nine-lang-conservative python tests/r134_probe.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('r135-preflight/summary.json').read_text())
+          assert s['status']=='PASS_BOUNDED_NINE_MODEL_SWITCH_RESOURCE_ONLY',s['status']
+          assert s['r134_conservative_inference'] is True
+          assert s['r133_diagnostic_only'] is True
+          assert s['memory_peak_bytes']*10<=9*512*1024*1024
+          assert s['oom_kills']==0 and s['sigkill_unknown_verified']==1
+          assert set(r['target'] for r in s['rounds'])=={'es','ko'}
+          print("R135_PREFLIGHT_SUCCESS_NOT_FULL_TEST",
+                {k:s[k] for k in ('memory_peak_mib','headroom_pct','oom_kills','wall_seconds')})
+          PY
+      - name: Full real 1800s soak with 10pct peak RAM, 0.1CPU and crash witness
+        timeout-minutes: 75
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p r135-evidence
+          chmod 0777 r135-evidence # disposable synthetic CI data, no privileges in container
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          trap 'unset TOKEN' EXIT
+          docker run --rm --network none \
+            --memory 512m --memory-swap 512m --cpus 0.1 \
+            --pids-limit 128 --security-opt no-new-privileges --cap-drop ALL \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" --env R125F_MAX_BATCHES=2 \
+            --volume "$PWD/r135-evidence:/srv/ffh/r125-output" \
+            ffh-r135-nine-lang-conservative
+      - name: Independent 512MiB/10pct 1800s validation with real model evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          s=json.loads(Path('r135-evidence/summary.json').read_text())
+          LIMIT=512*1024*1024
+          assert s['status']=='PASS_BOUNDED_NINE_MODEL_SWITCH_RESOURCE_ONLY', s.get('status')
+          assert s['memory_peak_bytes']*10 <= LIMIT*9
+          assert s['oom_kills']==0 and s['headroom_pct'] >= 10
+          assert s['wall_seconds']>=1800 and s['completed_circuits']>=2
+          assert s['sigkill_unknown_verified']==1
+          assert s['cpu_max'].split()==['10000','100000']
+          assert s['max_batches_per_stage']==2
+          assert s['per_switch_tree_rehash'] is False
+          assert s['build_time_all_nine_tree_sha_verified'] is True
+          assert s['r132_singleflight'] is True
+          assert s['r135_conservative_inference'] is True
+          assert all(v['batch']==1 and v['beam']==1 for v in s['inference_profiles'].values())
+          assert len(s['rounds'])>=18
+          assert set(r['target'] for r in s['rounds'])=={'es','ko','fr','vi','ja','de','ar','tl','zh'}
+          assert sum(r['target']=='de' for r in s['rounds'])>=2
+          assert all(r['worker_boots']==1 and 1<=r['batches']<=2 for r in s['rounds'])
+          assert s['production_writes']==0 and s['human_approvals']==0
+          print('R135_CONSERVATIVE_RESOURCE_STABILITY_ONLY_NOT_PRODUCTION',
+                {k:s[k] for k in ('memory_peak_mib','headroom_pct','wall_seconds',
+                                   'completed_circuits','oom_kills','sigkill_unknown_verified')})
+          PY
+      - name: Preserve real-model forensic output even when gates fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r135-conservative-30min-real-nine-model-evidence
+          path: |
+            r135-evidence/
+            r135-preflight/
+          retention-days: 5
+          if-no-files-found: warn
