@@ -1,5 +1,7 @@
 import os
 import hmac
+import fcntl
+import stat
 from pathlib import Path
 from threading import BoundedSemaphore
 
@@ -198,16 +200,43 @@ def guarded_input_size_error():
     return None
 
 
+# R120: single-host, single-container Linux lock shared by Gunicorn workers
+# during max-requests worker turnover. NOT a multi-replica/distributed lock.
+GUARDED_LOCK_FILE = "/tmp/ffh-guarded-single-instance.lock"
+
+def guarded_busy():
+    return jsonify({"error": "translation service busy",
+                    "retryable": True, "retry_after_seconds": 2}), 429, {
+                        "Retry-After": "2"
+                    }
+
+
 def guarded_admit(fn):
-    """Leave the second Gunicorn thread free for /health; never queue requests."""
+    """Fail fast across threads AND recycling Gunicorn workers in one container."""
     if not GUARDED_CAPACITY.acquire(blocking=False):
-        return jsonify({"error": "translation service busy",
-                        "retryable": True, "retry_after_seconds": 2}), 429, {
-                            "Retry-After": "2"
-                        }
+        return guarded_busy()
+    fd = None
+    file_locked = False
     try:
+        fd = os.open(GUARDED_LOCK_FILE,
+                     os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+        details = os.fstat(fd)
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid():
+            return jsonify({"error": "translation service unavailable"}), 503
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            file_locked = True
+        except BlockingIOError:
+            return guarded_busy()
         return fn()
+    except OSError:
+        # No model request is allowed when the cross-worker lock malfunctions.
+        return jsonify({"error": "translation service unavailable"}), 503
     finally:
+        if fd is not None:
+            if file_locked:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
         GUARDED_CAPACITY.release()
 
 
