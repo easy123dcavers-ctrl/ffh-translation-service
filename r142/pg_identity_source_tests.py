@@ -185,8 +185,8 @@ class RealSchemaTests(unittest.TestCase):
     def test_31_conservative_safety_text_denied(self):
         self.admin("UPDATE public.ffh_translation_memory SET source_text='pressure unsafe'")
         self.assertFalse(self.source('pressure unsafe').allowed)
-    def test_32_null_role_value_downgrades_member(self):
-        self.admin('INSERT INTO public.ffh_staff_roles VALUES (%s,NULL,true)',(OWNER,))
+    def test_32_unknown_role_value_downgrades_member(self):
+        self.admin("INSERT INTO public.ffh_staff_roles VALUES (%s,'fabricated_admin',true)",(OWNER,))
         self.assertEqual(self.user().role,'Member')
     def test_33_fabricated_member_broker_receipt_and_held(self):
         hits=[]
