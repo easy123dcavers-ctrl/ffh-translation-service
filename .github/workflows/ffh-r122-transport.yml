@@ -1,0 +1,59 @@
+name: FFH R122 Gunicorn gthread worker-turnover connection diagnostics
+on:
+  push:
+    branches: [ffh-r122-worker-recycle-transport-20261016]
+    paths: [.github/workflows/ffh-r122-transport.yml]
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - transport: default-keepalive
+            force_close: false
+            keepalive: 2
+          - transport: close-each-connection
+            force_close: true
+            keepalive: 0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile diagnostic script
+        run: python -m py_compile app.py tests/r122_gthread_transport.py
+      - name: Verify pinned Argos source and prepare lightweight experiment
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Bake exactly one German model, with preexisting known-tree check
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r122-${{ matrix.transport }} --file tests/r122.Dockerfile .
+      - name: Perform strict worker recycling plus health under 512MiB offline
+        run: |
+          mkdir -p r122-${{ matrix.transport }}
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env "R119_TEST_MAX_REQUESTS=24" \
+            --env "R122_CONNECTION_CLOSE=${{ matrix.force_close }}" \
+            --env "R122_KEEPALIVE=${{ matrix.keepalive }}" \
+            --volume "$PWD/r122-${{ matrix.transport }}:/srv/ffh/r118-output" \
+            ffh-r122-${{ matrix.transport }}
+          unset TOKEN
+      - name: Retain synthetic failure or pass artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r122-${{ matrix.transport }}
+          path: r122-${{ matrix.transport }}/
+          if-no-files-found: warn
+          retention-days: 3
