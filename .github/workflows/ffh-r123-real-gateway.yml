@@ -4,6 +4,8 @@ on:
     branches: [ffh-r123-loopback-drain-gateway-20261016]
     paths:
       - .github/workflows/ffh-r123-real-gateway.yml
+      - tests/r123_gateway_real_soak.py
+      - tests/r123_readiness_gateway.py
 permissions:
   contents: read
 jobs:
