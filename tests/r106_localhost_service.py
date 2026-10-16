@@ -113,7 +113,14 @@ def main():
                     {"items":synthetic,"source":"en","target":"es"},"POST",110)
                 # Try health checks while the translator is occupied.
                 time.sleep(0.05)
-                report["results"]["health_during_batch"]=timed("/health",timeout=5)
+                report["batch_active_at_health_probe"] = not long_request.done()
+                health_started = time.perf_counter()
+                try:
+                    report["results"]["health_during_batch"]=timed("/health",timeout=5)
+                except (TimeoutError, urllib.error.URLError) as exc:
+                    report["results"]["health_during_batch"]=(
+                        -1, {"error":type(exc).__name__},
+                        round(time.perf_counter()-health_started,3))
                 report["results"]["batch"]=long_request.result(timeout=115)
             report["results"]["non_object_single"]=timed("/translate",
                 ["array not an object"],"POST")
