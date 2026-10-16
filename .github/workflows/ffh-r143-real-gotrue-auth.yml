@@ -59,6 +59,9 @@ jobs:
           from r140.pg_ephemeral_tests import conn
           with conn("postgres") as db:
               db.execute("CREATE SCHEMA IF NOT EXISTS auth")
+              # GoTrue SQL refers to identities/users unqualified. Pin only the
+              # local synthetic postgres login for this disposable database.
+              db.execute("ALTER ROLE postgres IN DATABASE ffh_r140_ephemeral SET search_path TO auth, public")
           print("R143_ISOLATED_AUTH_NAMESPACE_READY")
           PY
           docker pull supabase/gotrue:v2.196.0
@@ -70,6 +73,7 @@ jobs:
             -e API_EXTERNAL_URL=http://127.0.0.1:9999 \
             -e GOTRUE_SITE_URL=http://127.0.0.1:9999 \
             -e GOTRUE_DB_DRIVER=postgres \
+            -e GOTRUE_DB_DB_NAMESPACE=auth \
             -e GOTRUE_DB_DATABASE_URL='postgres://postgres:r140_pg_ci_fake_only@127.0.0.1:5432/ffh_r140_ephemeral?sslmode=disable' \
             -e GOTRUE_JWT_SECRET='R143-Only-Disposable-CI-JWT-Not-A-Production-Secret-9876' \
             -e GOTRUE_JWT_EXP=3600 -e GOTRUE_JWT_AUD=authenticated \
