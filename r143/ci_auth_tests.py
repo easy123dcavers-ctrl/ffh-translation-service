@@ -52,6 +52,25 @@ class RealAuthTest(unittest.TestCase):
             lambda:conn("ffh_r140_writer"),SECRET)
     def request(self,n):
         return {"source":"en","target":"es","text":TEXT,"request_id":nonce(n)}
+    def test_00_eligibility_boolean_diagnostics(self):
+        with conn("postgres") as db:
+            row=db.execute("""SELECT email_confirmed_at IS NOT NULL,
+                        COALESCE(is_anonymous,false),deleted_at IS NULL,
+                        banned_until IS NULL
+                        FROM auth.users WHERE id=%s""",(self.uid,)).fetchone()
+            sessions=db.execute("SELECT COUNT(*) FROM auth.sessions WHERE id=%s AND user_id=%s",
+                               (self.session_id,self.uid)).fetchone()[0]
+            profile=db.execute("SELECT COUNT(*) FROM public.ffh_member_profiles WHERE user_id=%s",
+                              (self.uid,)).fetchone()[0]
+            terms=db.execute("SELECT COUNT(*) FROM public.ffh_terms_acceptances WHERE user_id=%s",
+                            (self.uid,)).fetchone()[0]
+        print("R143_AUTH_BOOLEAN_DIAG",
+              {"user_row_flags":row,"session_match":sessions,
+               "has_profile":profile,"terms_count":terms,
+               "verified_member":self.reader.member(self.uid,self.session_id) is not None,
+               "online_member":self.online(self.token) is not None},
+              flush=True)
+        self.assertEqual(sessions,1)
     def test_01_genuine_token_and_membership(self):
         status,data=auth("GET","/user",token=self.token)
         self.assertEqual(status,200)
