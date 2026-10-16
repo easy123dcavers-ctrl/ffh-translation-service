@@ -1,0 +1,45 @@
+name: FFH R122b controlled idle Gunicorn master restart under 512MiB
+on:
+  push:
+    branches: [ffh-r122b-quiescent-restart-20261016]
+    paths: [.github/workflows/ffh-r122b-quiescent.yml]
+permissions:
+  contents: read
+jobs:
+  german-quiescent-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile source and validation runner
+        run: python -m py_compile app.py tests/r122b_quiescent_master_restart.py
+      - name: Fetch pinned upstream Argos source and prepare lightweight test build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build one pinned known-tree English-to-German model at batch 1
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r122b-german --file tests/r122b.Dockerfile .
+      - name: Verify four idle-only master lifecycles and admission under hard 512MiB
+        run: |
+          mkdir -p r122b-results
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r122b-results:/srv/ffh/r118-output" \
+            ffh-r122b-german
+          unset TOKEN
+      - name: Preserve diagnostic artifacts whether failed or successful
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r122b-controlled-master-restarts
+          path: r122b-results/
+          if-no-files-found: warn
+          retention-days: 3
