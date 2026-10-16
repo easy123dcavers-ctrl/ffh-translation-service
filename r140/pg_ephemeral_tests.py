@@ -152,5 +152,30 @@ class PgIntegration(unittest.TestCase):
     def test_20_window_uses_server_clock(self):
         self.ledger.admission(OWNER,nonce(1))
         self.assertGreater(self.rows('SELECT window_bucket FROM ffh_broker_private.quota_windows')[0][0],0)
+    def test_21_commit_ack_lost_after_actual_commit(self):
+        class LostAck:
+            def __init__(self,raw):self.raw=raw;self.autocommit=raw.autocommit
+            def cursor(self):return self.raw.cursor()
+            def commit(self):
+                self.raw.commit()
+                raise OSError('simulated network loss after committed transaction')
+            def rollback(self):self.raw.rollback()
+            def close(self):self.raw.close()
+        with self.assertRaises(Denied) as err:
+            Ledger(lambda:LostAck(conn())).admission(OWNER,nonce(1))
+        self.assertEqual(err.exception.status,503)
+        self.assertEqual(self.rows('SELECT count(*) FROM ffh_broker_private.receipts')[0][0],1)
+        with self.assertRaises(Denied) as err:self.ledger.admission(OWNER,nonce(1))
+        self.assertEqual(err.exception.status,409)
+    def test_22_quota_denial_rollback_preserves_nonce(self):
+        strict=Ledger(conn,cap=1)
+        strict.admission(OWNER,nonce(1))
+        with self.assertRaises(Denied) as err:strict.admission(OWNER,nonce(2))
+        self.assertEqual(err.exception.status,429)
+        self.assertEqual(self.rows('SELECT count(*) FROM ffh_broker_private.receipts')[0][0],1)
+        with conn('postgres') as admin:
+            admin.execute('UPDATE ffh_broker_private.quota_windows SET window_bucket=window_bucket-1')
+        strict.admission(OWNER,nonce(2))
+        self.assertEqual(self.rows('SELECT count(*) FROM ffh_broker_private.receipts')[0][0],2)
 if __name__=='__main__':
     setup();unittest.main()
