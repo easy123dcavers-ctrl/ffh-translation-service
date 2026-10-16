@@ -1,0 +1,46 @@
+name: FFH R104 worker A experimental dependency-memory test
+on:
+  push:
+    branches: [ffh-r104-dependency-probe-a-20261016]
+    paths: [.github/workflows/ffh-r104-dependency-a.yml]
+permissions:
+  contents: read
+jobs:
+  dependency-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ARGOS_DEVICE_TYPE: cpu
+      ARGOS_CHUNK_TYPE: MINISBD
+      ARGOS_COMPUTE_TYPE: int8
+      ARGOS_INTER_THREADS: '1'
+      ARGOS_INTRA_THREADS: '1'
+      ARGOS_BATCH_SIZE: '8'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install pinned Argos and dependencies
+        run: python -m pip install --disable-pip-version-check argostranslate==1.11.0
+      - name: Download install model once
+        run: python tests/r104_dependency_memory.py setup
+      - name: Baseline fresh process with full dependency installation
+        run: python tests/r104_dependency_memory.py child --worker A --profile full-deps
+      - name: Remove optional dependencies in TEST RUNNER ONLY, unsupported production install
+        run: python -m pip uninstall -y stanza
+      - name: Fresh-process memory experiment after removal
+        run: python tests/r104_dependency_memory.py child --worker A --profile removed-optional
+      - name: Compare exact translations and memory
+        run: python tests/r104_dependency_memory.py compare --worker A
+      - name: Upload synthetic-only experiment report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r104-a-dependency-probe
+          path: r104-output/
+          if-no-files-found: warn
+          retention-days: 3
