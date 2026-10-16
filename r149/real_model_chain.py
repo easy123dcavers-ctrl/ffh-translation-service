@@ -4,7 +4,7 @@ All identities, requests and credentials are throwaway; NO cloud FFH access.
 import json
 import os
 import unittest
-from r143.ci_auth_tests import RealAuthTest,TEXT
+from r143 import ci_auth_tests as ephemeral_auth_tests
 from r140.pg_ephemeral_tests import conn,SECRET,nonce
 from r144.guarded_completion import make_guarded_broker
 from r149.guarded_transport import GuardedLoopbackModel,ENDPOINT
@@ -18,7 +18,7 @@ class RealIntegratedSynthetic(unittest.TestCase):
             if os.getenv(env)!='1':raise RuntimeError('CI only: '+env)
         # This creates a real signed disposable GoTrue session with current
         # terms and registered harmless non-safety English in local Postgres.
-        RealAuthTest.setUpClass.__func__(cls)
+        ephemeral_auth_tests.RealAuthTest.setUpClass.__func__(cls)
         key=os.getenv('FFH_R149_MODEL_SECRET')
         if not key:raise RuntimeError('missing private loopback transport token')
         cls.model=GuardedLoopbackModel(key)
@@ -30,7 +30,7 @@ class RealIntegratedSynthetic(unittest.TestCase):
         cls.broker=make_guarded_broker(cls.online,cls.reader.source,
                                       probe_model,lambda:conn('ffh_r140_writer'),
                                       SECRET,max_per_window=3,window_seconds=60)
-    def request(self,num,text=TEXT):
+    def request(self,num,text=ephemeral_auth_tests.TEXT):
         return {'source':'en','target':'es','text':text,'request_id':nonce(num)}
     def state(self,num):
         from r139.identity_hash import ReceiptKey
