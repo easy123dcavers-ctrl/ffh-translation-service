@@ -1,0 +1,26 @@
+name: FFH R118 guarded admission contract (offline only)
+on:
+  push:
+    branches: [ffh-r118-admission-soak-20261016]
+    paths:
+      - .github/workflows/ffh-r118-admission-contract.yml
+permissions:
+  contents: read
+jobs:
+  admission-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Flask without Argos or a translation model
+        run: python -m pip install --disable-pip-version-check 'Flask>=3.1,<4'
+      - name: Syntax-check isolated code
+        run: python -m py_compile app.py protected_translation.py tests/test_r118_admission.py
+      - name: Exercise fail-fast admission plus R116 and R108 regressions
+        run: |
+          python -m unittest discover -s tests -p 'test_r118_admission.py' -v
+          python -m unittest discover -s tests -p 'test_r116_guarded_api.py' -v
+          python -m unittest discover -s tests -p 'test_r108_flask_http.py' -v
