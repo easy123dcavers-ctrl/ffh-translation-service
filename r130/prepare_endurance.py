@@ -27,7 +27,7 @@ def build(source: str) -> str:
         '"R130 memory less than 10% headroom, or OOM kill"')
     result = replace_once(result,
         '        report["memory_peak_mib"]=round(peak/MIB,2)',
-        '        report["memory_peak_mib"]=round(peak/MIB,2)\\n        report["memory_peak_bytes"]=peak')
+        '        report["memory_peak_mib"]=round(peak/MIB,2)\n        report["memory_peak_bytes"]=peak')
     ast.parse(result)
     return result
 
