@@ -1,0 +1,168 @@
+name: FFH R149 real GoTrue Postgres guarded Argos isolated end-to-end
+on:
+  push:
+    branches: [ffh-r149-ephemeral-real-model-broker-20261017]
+    paths: [.github/workflows/ffh-r149-real-guarded-e2e.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r149-real-model-isolated
+  cancel-in-progress: false
+jobs:
+  full-ephemeral-bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: ffh_r140_ephemeral
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: r140_pg_ci_fake_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ffh_r140_ephemeral"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      FFH_R140_EPHEMERAL_ONLY: '1'
+      FFH_R143_EPHEMERAL_ONLY: '1'
+      FFH_R149_EPHEMERAL_ONLY: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Exact branch, syntax, immutable signatures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r149-ephemeral-real-model-broker-20261017
+          python -m py_compile r149/guarded_transport.py r149/real_model_chain.py
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+          python -c "import psycopg;assert psycopg.__version__=='3.2.6'"
+      - name: Create disposable ledger + private GoTrue namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from r140.pg_ephemeral_tests import conn,setup
+          setup()
+          with conn('postgres') as db:
+              db.execute('CREATE SCHEMA IF NOT EXISTS auth')
+              db.execute('ALTER ROLE postgres IN DATABASE ffh_r140_ephemeral SET search_path TO auth,public')
+          print('R149_EPHEMERAL_POSTGRES_LEDGER_READY')
+          PY
+      - name: Start real disposable GoTrue authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull supabase/gotrue:v2.196.0
+          docker run -d --name ffh-r149-gotrue --network host \
+            --security-opt no-new-privileges --cap-drop ALL \
+            --pids-limit 256 --memory 512m --memory-swap 512m \
+            -e GOTRUE_API_HOST=0.0.0.0 -e GOTRUE_API_PORT=9999 \
+            -e API_EXTERNAL_URL=http://127.0.0.1:9999 \
+            -e GOTRUE_SITE_URL=http://127.0.0.1:9999 \
+            -e GOTRUE_DB_DRIVER=postgres \
+            -e GOTRUE_DB_DB_NAMESPACE=auth \
+            -e GOTRUE_DB_DATABASE_URL='postgres://postgres:r140_pg_ci_fake_only@127.0.0.1:5432/ffh_r140_ephemeral?sslmode=disable' \
+            -e GOTRUE_JWT_SECRET='R143-Only-Disposable-CI-JWT-Not-A-Production-Secret-9876' \
+            -e GOTRUE_JWT_EXP=3600 -e GOTRUE_JWT_AUD=authenticated \
+            -e GOTRUE_JWT_DEFAULT_GROUP_NAME=authenticated \
+            -e GOTRUE_MAILER_AUTOCONFIRM=true \
+            -e GOTRUE_EXTERNAL_EMAIL_ENABLED=true \
+            -e GOTRUE_DISABLE_SIGNUP=false \
+            supabase/gotrue:v2.196.0
+          python - <<'PY'
+          import time,urllib.request
+          for _ in range(70):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:9999/health',timeout=2) as r:
+                      if r.status==200:print('R149_REAL_DISPOSABLE_GOTRUE_HEALTHY');break
+              except Exception:time.sleep(2)
+          else:raise SystemExit('Isolated GoTrue health FAILED')
+          PY
+          python -c "from r143.ci_auth_fixture import setup;setup();print('R149_CANONICAL_ENGLISH_AND_TERMS_READY')"
+      - name: Build pinned lightweight real Spanish Argos model
+        shell: bash
+        timeout-minutes: 35
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = '63b84ecb46c740c7a7c066d58636434d3e893ebf'
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+          python - <<'PY'
+          from pathlib import Path
+          src=Path('tests/r116.Dockerfile').read_text()
+          assert src.count('ARGOS_BATCH_SIZE=8')==1
+          src=src.replace('ARGOS_BATCH_SIZE=8','ARGOS_BATCH_SIZE=1')
+          assert src.count('CMD ["python", "tests/r116_real_guarded_gunicorn.py"]')==1
+          Path('r149/Dockerfile').write_text(src)
+          PY
+          docker build --build-arg FFH_TEST_TARGET=es \
+            --tag ffh-r149-model-disposable --file r149/Dockerfile .
+      - name: Launch single real Argos model (512MiB and 0.1 CPU)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          echo "::add-mask::$TOKEN"
+          echo "FFH_R149_MODEL_SECRET=$TOKEN" >> "$GITHUB_ENV"
+          docker run -d --name ffh-r149-model --network host \
+            --memory 512m --memory-swap 512m --cpus 0.1 --pids-limit 128 \
+            --security-opt no-new-privileges --cap-drop ALL \
+            --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --env FFH_LEGACY_QUARANTINE_STAGING_ONLY=true \
+            ffh-r149-model-disposable \
+            gunicorn --workers 1 --threads 1 --timeout 120 --bind 127.0.0.1:17849 app:app
+          python - <<'PY'
+          import urllib.request,urllib.error,time
+          for i in range(100):
+              try:
+                  with urllib.request.urlopen('http://127.0.0.1:17849/health',timeout=3) as r:
+                      if r.status==200:
+                          print('R149_LOOPBACK_MODEL_HEALTHY_NOT_PUBLIC')
+                          break
+              except Exception:time.sleep(2)
+          else:raise SystemExit('R149 model health timeout')
+          PY
+      - name: Real GoTrue JWT -> private source -> atomic PostgreSQL -> real Argos -> final Auth/source recheck
+        shell: bash
+        timeout-minutes: 18
+        run: |
+          set -euo pipefail
+          python -m unittest r149.real_model_chain -v 2>&1 | tee r149-chain.log
+          grep -E 'Ran 6 tests' r149-chain.log
+          grep -E '^OK$' r149-chain.log
+          grep -F 'R149_REAL_GOTRUE_POSTGRES_GUARDED_ARGOS_TRANSLATION_PASS' r149-chain.log
+          test "$(docker inspect -f '{{.State.OOMKilled}}' ffh-r149-model)" = false
+          PEAK="$(docker exec ffh-r149-model cat /sys/fs/cgroup/memory.peak)"
+          python - "$PEAK" <<'PY'
+          import sys
+          p=int(sys.argv[1])
+          lim=512*1024*1024
+          print("R149_REAL_MODEL_CGROUP_MEMORY_PEAK",{"mib":round(p/1048576,2),
+            "spare_pct":round(100*(lim-p)/lim,2),"cpu_limit":0.1})
+          assert p*10<=lim*9,"Real Argos exceeds mandatory 10% RAM headroom"
+          PY
+          echo R149_REAL_SIGNED_GOTRUE_DURABLE_LEDGER_AND_ARGOS_STAGING_ONLY_PASS
+      - name: Collect log and exactly tested source
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r149-real-guarded-model-broker-ci-evidence
+          path: |
+            r149-chain.log
+            r149/guarded_transport.py
+            r149/real_model_chain.py
+            r149/Dockerfile
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Stop disposable model and Auth, no production effect
+        if: always()
+        shell: bash
+        run: |
+          docker inspect --format 'R149_MODEL_EXIT_OOM {{.State.OOMKilled}}' ffh-r149-model 2>/dev/null || true
+          docker rm -f ffh-r149-model ffh-r149-gotrue || true
