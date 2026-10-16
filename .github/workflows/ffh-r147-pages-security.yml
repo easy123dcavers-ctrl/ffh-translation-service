@@ -1,0 +1,38 @@
+name: FFH R147 zero-credit GitHub Pages staged login security gate
+on:
+  push:
+    branches: [ffh-r147-hosted-member-auth-probe-20261017]
+    paths: [.github/workflows/ffh-r147-pages-security.yml]
+permissions:
+  contents: read
+jobs:
+  offline-and-hosted-negative-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assert isolated branch
+        run: |
+          test "$GITHUB_REF_NAME" = ffh-r147-hosted-member-auth-probe-20261017
+          test -s docs/index.html
+      - name: Verify browser token privacy, pinned origin and live Auth deny
+        run: |
+          set -euo pipefail
+          python -m unittest -v r147.pages_tests 2>&1 | tee r147-pages-audit.log
+          grep -E 'Ran 10 tests' r147-pages-audit.log
+          grep -E '^OK$' r147-pages-audit.log
+          echo 'R147_PAGES_STATIC_10_PASS_LOGIN_REQUIRED_AND_TRANSLATOR_OFF'
+      - name: Preserve exact static page and audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r147-ghpages-audited-staging-login-source
+          path: |
+            docs/index.html
+            r147/pages_tests.py
+            r147-pages-audit.log
+          if-no-files-found: warn
+          retention-days: 7
