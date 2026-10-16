@@ -1,0 +1,41 @@
+name: FFH R111 offline memory-limited sustained Gunicorn verification
+on:
+  push:
+    branches: [ffh-r111-sustained-offline-stress-20261016]
+    paths:
+      - .github/workflows/ffh-r111-sustained-512m.yml
+permissions:
+  contents: read
+jobs:
+  sustained-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout experimental branch
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify script syntax
+        run: python -m py_compile tests/r111_sustained_service.py
+      - name: Retrieve immutable upstream translation source
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build disposable container with pretrained offline models
+        run: docker build --tag ffh-r111-test --file tests/r111.Dockerfile .
+      - name: Run two-server-startup memory-stress and HTTP checks inside true 512MiB cgroup
+        run: |
+          mkdir -p r111-results
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --volume "$PWD/r111-results:/srv/ffh/r111-output" ffh-r111-test
+      - name: Save invented-text-only results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r111-synthetic-512m-restart-stress
+          path: r111-results/
+          if-no-files-found: warn
+          retention-days: 3
