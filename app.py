@@ -10,6 +10,7 @@ os.environ.setdefault("ARGOS_DEVICE_TYPE", "cpu")
 from flask import Flask, jsonify, request
 import argostranslate.package
 import argostranslate.translate
+from translation_cache import TranslationCache
 
 app = Flask(__name__)
 
@@ -19,6 +20,13 @@ TARGETS = {"es": "Spanish", "fr": "French", "ja": "Japanese", "de": "German", "a
 CONFIGURED_TARGET = os.environ.get("FFH_TARGET_LANGUAGE", "es").strip().lower()
 MULTILINGUAL = os.environ.get("FFH_MULTILINGUAL", "false").lower() == "true"
 MAX_BATCH_ITEMS = 25
+
+# R102 experimental optimization: DISABLED by default.
+# Process-local cache holds at most 128 short inputs for 10 minutes.
+# Restart/redeploy the service when the installed model changes; a restart clears it.
+CACHE_ENABLED = os.environ.get("FFH_TRANSLATION_CACHE_ENABLED", "false").lower() == "true"
+CACHE_MODEL_GENERATION = os.environ.get("FFH_TRANSLATION_CACHE_GENERATION", "process-start")
+CACHE = TranslationCache(max_entries=128, ttl_seconds=600)
 
 if CONFIGURED_TARGET not in TARGETS:
     raise RuntimeError(f"Unsupported FFH_TARGET_LANGUAGE: {CONFIGURED_TARGET}")
@@ -36,7 +44,13 @@ def configured_model_installed():
     return bool(supported_targets()) if MULTILINGUAL else configured_pair() in installed_pairs()
 
 def translate_text(q, target=None):
-    return argostranslate.translate.translate(q, SOURCE, target or CONFIGURED_TARGET)
+    effective_target = target or CONFIGURED_TARGET
+    if not CACHE_ENABLED:
+        return argostranslate.translate.translate(q, SOURCE, effective_target)
+    return CACHE.run(
+        q, SOURCE, effective_target, CACHE_MODEL_GENERATION,
+        lambda: argostranslate.translate.translate(q, SOURCE, effective_target),
+    )
 
 @app.get("/")
 def root():
