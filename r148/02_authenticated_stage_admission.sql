@@ -69,7 +69,7 @@ BEGIN
     pg_catalog.convert_to(p_target,'UTF8') ||
     pg_catalog.decode('00','hex') ||
     pg_catalog.convert_to(p_source,'UTF8'),v_secret,'sha256'),'hex');
- v_bucket:=pg_catalog.floor(pg_catalog.extract(epoch from pg_catalog.clock_timestamp())/60)::bigint;
+ v_bucket:=pg_catalog.floor(pg_catalog.date_part('epoch',pg_catalog.clock_timestamp())/60)::bigint;
  -- PL/pgSQL inner exception block is a subtransaction. When quota rejects,
  -- receipt INSERT is rolled back too. Atomic uniqueness prevents double admission.
  BEGIN
