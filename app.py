@@ -44,6 +44,11 @@ GUARDED_CAPACITY = BoundedSemaphore(value=1)
 MAX_GUARDED_BODY_BYTES = 128 * 1024
 # A staging credential must be supplied through runtime secret configuration.
 GUARDED_STAGE_TOKEN = os.environ.get("FFH_GUARDED_STAGING_TOKEN", "")
+# R121: STAGING-ONLY opt-in quarantine after clients are migrated.
+# Defaults off. Does not secure or change existing production routes.
+LEGACY_QUARANTINE_STAGING_ONLY = os.environ.get(
+    "FFH_LEGACY_QUARANTINE_STAGING_ONLY", "false"
+).lower() == "true"
 MIN_STAGE_TOKEN_LENGTH = 32
 GUARDED_LINK = re.compile(
     r"(?i)(?:https?://|www\.)|[\w.+-]+@[\w.-]+\.[a-z]{2,}"
@@ -115,6 +120,19 @@ def validate_target(source, target):
     if not configured_model_installed():
         return jsonify({"error":f"model not installed: {SOURCE}->{CONFIGURED_TARGET}"}), 503
     return None
+
+@app.before_request
+def quarantine_legacy_stage_paths():
+    """During isolated migration testing, prevent bypass of guarded API.
+    
+    Fail closed on BOTH legacy routes, without touching health/languages.
+    This is NOT user/member auth or a public-production migration.
+    """
+    if (GUARDED_API_ENABLED and LEGACY_QUARANTINE_STAGING_ONLY
+            and request.path in ("/translate", "/translate-batch")):
+        return jsonify({"error": "legacy translation route disabled in staging"}), 410
+    return None
+
 
 @app.post("/translate")
 def translate():
