@@ -1,5 +1,5 @@
 {
-  "source": "R113 eight-language isolated model tree manifests; hashes observed after installation in GitHub CI, not independently authenticated upstream model archive hashes",
+  "source": "R113 eight prior installed model tree observations plus R124 first Spanish model tree observation (run 38864824281); post-installation repeatability only, NOT independent archive/publisher/license authentication",
   "release_ready": false,
   "verified_packages": {
     "ar": {
@@ -41,6 +41,10 @@
       "version": "1.9",
       "sha256": "a4ee09384d378b11b62265d138cbd9e05b113e4179eae85794ef1749001c0caa",
       "bytes": 85640765
+    },
+    "es": {
+      "sha256": "b2c84f20889ba883ce7b2b29fe264017731a3e9e134410348453163148c2fca1",
+      "bytes": 96243365
     }
   }
 }
