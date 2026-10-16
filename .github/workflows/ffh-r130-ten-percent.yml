@@ -1,0 +1,103 @@
+name: FFH R130 disposable nine-language endurance 10pct RAM
+on:
+  push:
+    branches: [ffh-r130-ten-percent-endurance-20261017]
+    paths: [.github/workflows/ffh-r130-ten-percent.yml]
+permissions:
+  contents: read
+concurrency:
+  group: ffh-r130-disposable-10pct
+  cancel-in-progress: false
+jobs:
+  real-nine-language:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify source pin and both headroom policies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'ffh-r130-ten-percent-endurance-20261017'
+          test "$(git hash-object tests/r125f_bounded_switch.py)" = 'a73832312115cc02c019cb1fa2e8edd457c7654b'
+          python -m unittest discover -s tests -p test_r130_memory_policy.py -v
+          python -m unittest discover -s tests -p test_r125_router_contract.py -v
+      - name: Prepare independently pinned Argos source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = '63b84ecb46c740c7a7c066d58636434d3e893ebf'
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Generate strictly bounded 30-minute real-model runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m r130.prepare_endurance tests/r125f_bounded_switch.py tests/r130_endurance.py
+          python -m py_compile tests/r130_endurance.py
+          python - <<'PY'
+          from pathlib import Path
+          original=Path('tests/r125f.Dockerfile').read_text()
+          a='COPY tests/r125f_bounded_switch.py tests/r125f_bounded_switch.py'
+          b='CMD ["python", "tests/r125f_bounded_switch.py"]'
+          assert original.count(a)==1 and original.count(b)==1
+          result=original.replace(a,'''COPY tests/r130_endurance.py tests/r130_endurance.py
+          COPY tests/r130_memory_policy.py tests/r130_memory_policy.py''')
+          result=result.replace(b,'CMD ["python", "tests/r130_endurance.py"]')
+          Path('tests/r130.Dockerfile').write_text(result)
+          PY
+      - name: Build and verify all nine real Argos models
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag ffh-r130-ten-percent --file tests/r130.Dockerfile .
+      - name: Run actual 1800-second stress and SIGKILL witness
+        shell: bash
+        timeout-minutes: 75
+        run: |
+          set -euo pipefail
+          mkdir -p r130-real-output
+          chmod 0777 r130-real-output
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          trap 'unset TOKEN' EXIT
+          docker run --rm --network none --memory 512m --memory-swap 512m \
+            --cpus 0.1 --pids-limit 128 \
+            --security-opt no-new-privileges --cap-drop ALL \
+            -e "FFH_GUARDED_STAGING_TOKEN=$TOKEN" -e R125F_MAX_BATCHES=2 \
+            -v "$PWD/r130-real-output:/srv/ffh/r125-output" \
+            ffh-r130-ten-percent
+      - name: Enforce exact 10pct reserve and real-life durability gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          s=json.loads(Path('r130-real-output/summary.json').read_text())
+          assert s['status']=='PASS_BOUNDED_NINE_MODEL_SWITCH_RESOURCE_ONLY',s
+          assert s['memory_peak_bytes']*10 <= (512*1024*1024)*9, "Less than 10pct headroom"
+          assert s['memory_peak_mib'] <= 460.8
+          assert s['oom_kills']==0
+          assert s['wall_seconds'] >= 1800
+          assert s['completed_circuits'] >= 2
+          assert len(s['rounds']) >= 18
+          assert set(r['target'] for r in s['rounds']) == {'es','fr','ja','de','ar','tl','ko','vi','zh'}
+          assert sum(r['target']=='de' for r in s['rounds'])>=2
+          assert s['sigkill_unknown_verified']==1
+          assert s['cpu_max'].split()==['10000','100000']
+          assert s['max_batches_per_stage']==2
+          assert all(r['worker_boots']==1 and 1<=r['batches']<=2 for r in s['rounds'])
+          assert s['production_writes']==0 and s['human_approvals']==0
+          print('R130_RESOURCE_ONLY_PASS_NOT_PRODUCTION_CERTIFIED', {k:s[k] for k in ('memory_peak_mib','headroom_pct','wall_seconds','completed_circuits','oom_kills','sigkill_unknown_verified')})
+          PY
+      - name: Preserve diagnostic evidence on any exit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r130-disposable-real-model-stability-evidence
+          path: r130-real-output/
+          if-no-files-found: warn
+          retention-days: 5
