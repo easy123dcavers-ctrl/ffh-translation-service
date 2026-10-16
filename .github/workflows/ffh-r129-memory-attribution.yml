@@ -30,7 +30,7 @@ jobs:
               # Avoid a second full-tree hash immediately before Argos load.
               entry=baselines["verified_packages"][target]
               match={"target":target,"tree_sha256":entry["sha256"],
-                     "tree_bytes":entry["bytes"],"tree_files":entry["files"],
+                     "tree_bytes":entry["bytes"],"tree_files":entry.get("files",0),
                      "release_certified":False}'''
           # Align explanatory comment with the selected function's four-space indent.
           new=new.replace("              # Avoid","    # Avoid").replace("              entry=","    entry=").replace("              match=","    match=").replace("                     ","           ")
