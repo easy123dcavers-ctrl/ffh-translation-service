@@ -1,0 +1,46 @@
+name: FFH R116 guarded HTTP 512MiB real-model tests
+on:
+  push:
+    branches: [ffh-r116-guarded-api-staging-20261016]
+    paths:
+      - .github/workflows/ffh-r116-real-guarded-gunicorn.yml
+permissions:
+  contents: read
+jobs:
+  guarded-gunicorn:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        target: [ar, zh]
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax check guarded service integration
+        run: python -m py_compile app.py protected_translation.py tests/r116_real_guarded_gunicorn.py
+      - name: Fetch pinned upstream and build source package
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build single-language experimental guard container
+        run: docker build --build-arg FFH_TEST_TARGET=${{ matrix.target }} --tag ffh-r116-${{ matrix.target }} --file tests/r116.Dockerfile .
+      - name: Exercise guarded real Argos HTTP inside offline 512MiB cgroup
+        run: |
+          mkdir -p r116-output-${{ matrix.target }}
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --volume "$PWD/r116-output-${{ matrix.target }}:/srv/ffh/r116-output" ffh-r116-${{ matrix.target }}
+      - name: Preserve only synthetic service evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r116-guarded-${{ matrix.target }}
+          path: r116-output-${{ matrix.target }}/
+          if-no-files-found: warn
+          retention-days: 3
