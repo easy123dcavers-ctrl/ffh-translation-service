@@ -1,0 +1,47 @@
+name: FFH R123 real guarded readiness/drain gateway 512MiB
+on:
+  push:
+    branches: [ffh-r123-loopback-drain-gateway-20261016]
+    paths:
+      - .github/workflows/ffh-r123-real-gateway.yml
+permissions:
+  contents: read
+jobs:
+  gateway-quiescent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile gateway and integration test
+        run: |
+          python -m py_compile tests/r123_readiness_gateway.py tests/r123_gateway_real_soak.py app.py
+      - name: Confirm pinned Argos upstream and prepare test-only lightweight build
+        run: |
+          git clone --depth 1 --branch v1.11.0 https://github.com/argosopentech/argos-translate r109-upstream
+          test "$(git -C r109-upstream rev-parse HEAD)" = "63b84ecb46c740c7a7c066d58636434d3e893ebf"
+          python tools/r109_prepare_lightweight_source.py --upstream r109-upstream --output r109-light
+      - name: Build verified German single-target test image
+        run: |
+          docker build --build-arg FFH_TEST_TARGET=de \
+            --build-arg FFH_TEST_BATCH=1 --build-arg FFH_TEST_BEAM=4 \
+            --tag ffh-r123-gateway --file tests/r123.Dockerfile .
+      - name: Test gateway 503 on all planned gaps under strict 512MiB
+        run: |
+          mkdir -p r123-output
+          TOKEN="$(python -c 'import secrets;print(secrets.token_urlsafe(48))')"
+          docker run --rm --network none --memory 512m --memory-swap 512m --cpus 1 \
+            --pids-limit 128 --env "FFH_GUARDED_STAGING_TOKEN=$TOKEN" \
+            --volume "$PWD/r123-output:/srv/ffh/r118-output" \
+            ffh-r123-gateway
+          unset TOKEN
+      - name: Preserve only synthetic test results, including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r123-real-gateway-evidence
+          path: r123-output/
+          if-no-files-found: warn
+          retention-days: 3
