@@ -13,7 +13,7 @@ button{padding:.8rem;min-height:44px}#status{white-space:pre-wrap}
 <input id="email" type="email" autocomplete="email" required>
 <button id="send" type="submit">Send secure sign-in email</button></form>
 <section id="results" hidden><h2>Member status</h2><p id="summary"></p>
-<button type="button" id="check">Verify authorization</button></section>
+<button type="button" id="check">Verify authorization</button><button type="button" id="stage" disabled>Test secure staging request (no translation)</button><button type="button" id="duplicate" disabled>Test duplicate protection</button><p id="stageStatus" role="status" aria-live="polite"></p></section>
 <p>Do not share your sign-in link, password, verification code, or token.</p>
 <script>
 'use strict';
@@ -43,6 +43,7 @@ async function check(){
    throw new Error('Member or source authorization is not ready.');
   el('summary').textContent='PASS: verified Member, current terms, registered English source and Japanese target. Model dispatch remains OFF.';
   report('Your staging Member check PASSED. No translation or publication occurred.');
+  el('stage').disabled=false;
  }catch(e){report('Not ready: '+(e?.message||'Please sign in again.'))}
  finally{el('check').disabled=false}
 }
@@ -67,4 +68,4 @@ el('form').addEventListener('submit',async event=>{
  finally{el('send').disabled=false}
 });
 el('check').addEventListener('click',check);
-</script></body></html>
+</script><script src="./r148.js"></script></body></html>
