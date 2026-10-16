@@ -1,0 +1,32 @@
+name: FFH R123 offline readiness drain and no-replay contracts
+on:
+  push:
+    branches: [ffh-r123-loopback-drain-gateway-20261016]
+    paths:
+      - .github/workflows/ffh-r123-offline.yml
+permissions:
+  contents: read
+jobs:
+  readiness-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile gateway and contract tests
+        run: python -m py_compile tests/r123_readiness_gateway.py tests/test_r123_gateway_contract.py
+      - name: Run loopback-only 503/drain, no-replay and authorization tests
+        run: python -m unittest discover -s tests -p 'test_r123_gateway_contract.py' -v
+      - name: Confirm existing 98 legacy-quarantine and security tests
+        run: |
+          python -m pip install --disable-pip-version-check 'Flask>=3.1,<4'
+          python -m unittest discover -s tests -p 'test_r121_legacy_quarantine.py' -v
+          python -m unittest discover -s tests -p 'test_r120_cross_worker.py' -v
+          python -m unittest discover -s tests -p 'test_r119_auth_privacy.py' -v
+          python -m unittest discover -s tests -p 'test_r119_retry_contract.py' -v
+          python -m unittest discover -s tests -p 'test_r119_model_tree.py' -v
+          python -m unittest discover -s tests -p 'test_r118_admission.py' -v
+          python -m unittest discover -s tests -p 'test_r116_guarded_api.py' -v
+          python -m unittest discover -s tests -p 'test_r108_flask_http.py' -v
