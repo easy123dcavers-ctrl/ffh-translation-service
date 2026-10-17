@@ -7,13 +7,13 @@ label,button{display:block;margin-top:.9rem}input{box-sizing:border-box;padding:
 button{padding:.8rem;min-height:44px}#status{white-space:pre-wrap}
 </style></head><body>
 <h1>FFH staging account test</h1>
-<p>This page tests your existing FFH staging Member account. Nothing is translated or published.</p>
+<p>This page tests the FFH staging Member account. The optional R151 button generates one synthetic Spanish draft; nothing is approved or published.</p>
 <p id="status" role="status" aria-live="polite">Checking session…</p>
 <form id="form" hidden><label for="email">Your staging account email</label>
 <input id="email" type="email" autocomplete="email" required>
 <button id="send" type="submit">Send secure sign-in email</button></form>
 <section id="results" hidden><h2>Member status</h2><p id="summary"></p>
-<button type="button" id="check">Verify authorization</button><button type="button" id="stage" disabled>Test secure staging request (no translation)</button><button type="button" id="duplicate" disabled>Test duplicate protection</button><p id="stageStatus" role="status" aria-live="polite"></p><button type="button" id="r150" disabled>Verify R150 hosted Member broker (no translation)</button><p id="r150Status" role="status" aria-live="polite"></p></section>
+<button type="button" id="check">Verify authorization</button><button type="button" id="stage" disabled>Test secure staging request (no translation)</button><button type="button" id="duplicate" disabled>Test duplicate protection</button><p id="stageStatus" role="status" aria-live="polite"></p><button type="button" id="r150" disabled>Verify R150 hosted Member broker (no translation)</button><p id="r150Status" role="status" aria-live="polite"></p><button type="button" id="r151" disabled>Test R151 real Spanish draft (synthetic text only)</button><button type="button" id="r151Replay" disabled>Test R151 duplicate refusal</button><p id="r151Status" role="status" aria-live="polite"></p></section>
 <p>Do not share your sign-in link, password, verification code, or token.</p>
 <script>
 'use strict';
@@ -44,6 +44,7 @@ async function check(){
   el('summary').textContent='PASS: verified Member, current terms, registered English source and Japanese target. Model dispatch remains OFF.';
   report('Your staging Member check PASSED. No translation or publication occurred.');
   el('stage').disabled=false;
+  el('r151').disabled=false;
   el('r150').disabled=false;
  }catch(e){report('Not ready: '+(e?.message||'Please sign in again.'))}
  finally{el('check').disabled=false}
@@ -69,4 +70,4 @@ el('form').addEventListener('submit',async event=>{
  finally{el('send').disabled=false}
 });
 el('check').addEventListener('click',check);
-</script><script src="./r148.js"></script><script src="./r150.js"></script></body></html>
+</script><script src="./r148.js"></script><script src="./r150.js"></script><script src="./r151.js"></script></body></html>
