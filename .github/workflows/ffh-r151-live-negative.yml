@@ -1,4 +1,5 @@
 name: FFH R151 live denied JWT plus Android draft UI
+# Reverify updated replay button guarded on confirmed positive only
 on:
   push:
     branches: [ffh-r151-hosted-synthetic-model-gate-20261017]
