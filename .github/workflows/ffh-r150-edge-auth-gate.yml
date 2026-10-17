@@ -1,0 +1,45 @@
+name: FFH R150 isolated Supabase Edge auth broker model-off security
+on:
+  push:
+    branches: [ffh-r150-zero-new-render-edge-broker-prep-20261017]
+    paths: [.github/workflows/ffh-r150-edge-auth-gate.yml]
+permissions:
+  contents: read
+jobs:
+  staging-no-deploy-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Isolated no-production/no-Render guard
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r150-zero-new-render-edge-broker-prep-20261017
+          node --check r150/edge/core.mjs
+          node --check r150/test_edge.mjs
+          if grep -E '(onrender\.com|/experimental/guarded-translate|service_role|sb_secret_|localStorage|sessionStorage)' r150/edge/core.mjs; then
+            echo 'Unexpected Render dispatch, secret, or browser persistence in auth-only boundary' >&2
+            exit 1
+          fi
+      - name: Independent 15 Member/source/token security tests
+        run: |
+          set -euo pipefail
+          node --test r150/test_edge.mjs 2>&1 | tee r150-edge-qa.log
+          grep -E '^# tests 15$' r150-edge-qa.log
+          grep -E '^# pass 15$' r150-edge-qa.log
+          grep -E '^# fail 0$' r150-edge-qa.log
+          echo 'R150_EDGE_AUTH_ONLY_15_PASS_NO_DEPLOY_NO_MODEL'
+      - name: Exact tested source and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r150-edge-auth-only-isolated-ci
+          path: |
+            r150/edge/
+            r150/test_edge.mjs
+            r150-edge-qa.log
+          retention-days: 7
+          if-no-files-found: warn
