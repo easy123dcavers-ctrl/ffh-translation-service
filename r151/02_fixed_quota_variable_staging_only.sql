@@ -1,7 +1,7 @@
 -- R151 targeted staging-only repair. Must match deployed unsafe source first.
 DO $guard$
 BEGIN
-  IF pg_catalog.position('VALUES(user_hash,slot,1)' IN pg_catalog.pg_get_functiondef('public.ffh_r151_admit(text)'::regprocedure)) = 0 THEN
+  IF pg_catalog.strpos(pg_catalog.pg_get_functiondef('public.ffh_r151_admit(text)'::regprocedure),'VALUES(user_hash,slot,1)') = 0 THEN
     RAISE EXCEPTION 'Unexpected R151 function source: stop without changing anything';
   END IF;
 END;
