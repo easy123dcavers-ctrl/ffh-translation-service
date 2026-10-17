@@ -19,6 +19,7 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = ffh-r150-zero-new-render-edge-broker-prep-20261017
           python -m py_compile r150/test_hosted_negative.py
+      # R150 v2: staging public publishable-key runtime startup correction.
       - name: Exercise real staged Edge HTTPS (no tokens or model)
         run: |
           set -euo pipefail
