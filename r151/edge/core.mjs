@@ -138,12 +138,13 @@ export function createR151Handler({publishableKey,serviceRoleKey,fetchImpl=fetch
       admitted=true;
       // Existing Render service is NOT reconfigured/deployed. Only the fixed
       // harmless synthetic English test phrase is sent; no JWT or member data.
-      const generated=await call(RENDER,{
-        method:'POST',
-        headers:{'Content-Type':'application/json',Accept:'application/json',
-          Authorization:undefined,apikey:undefined},
-        body:JSON.stringify({q:TEXT,source:'en',target:TARGET})
-      },4096,modelTimeoutMs);
+      const modelResponse=await fetchImpl(RENDER,{
+        method:'POST',redirect:'error',cache:'no-store',
+        headers:{'Content-Type':'application/json',Accept:'application/json'},
+        body:JSON.stringify({q:TEXT,source:'en',target:TARGET}),
+        signal:AbortSignal.timeout(modelTimeoutMs)
+      });
+      const generated=await bounded(modelResponse,4096);
       const translation=generated?.translatedText;
       const plausible=typeof translation==='string'&&translation.trim()!==''&&
         translation.length<=800&&translation!==TEXT&&!/[\u0000-\u001f\u007f]/.test(translation);
