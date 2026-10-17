@@ -1,0 +1,42 @@
+name: FFH R150 Android staging-only broker button QA
+on:
+  push:
+    branches: [ffh-r150-zero-new-render-edge-broker-prep-20261017]
+    paths: [.github/workflows/ffh-r150-android-gate.yml]
+permissions:
+  contents: read
+jobs:
+  android-pages-staging-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Assert staging-only branch
+        run: |
+          test "$GITHUB_REF_NAME" = ffh-r150-zero-new-render-edge-broker-prep-20261017
+          node --check docs/r150.js
+      - name: Guard UI and host URLs with nine independent assertions
+        run: |
+          set -euo pipefail
+          python -m unittest -v r150.test_android_ui 2>&1 | tee r150-android-ui.log
+          grep -E 'Ran 9 tests' r150-android-ui.log
+          grep -E '^OK$' r150-android-ui.log
+          echo R150_ANDROID_PAGES_STAGE_ONLY_9_PASS
+      - name: Save exact browser source and regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r150-mobile-broker-auth-button
+          path: |
+            docs/index.html
+            docs/r150.js
+            r150/test_android_ui.py
+            r150-android-ui.log
+          retention-days: 7
+          if-no-files-found: warn
