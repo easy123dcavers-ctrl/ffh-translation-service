@@ -6,8 +6,5 @@
 import {createR150Handler} from './core.mjs';
 
 // Publishable keys are public by design, never service-role or secret keys.
-const keys=JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS') ?? '{}');
-const variable=keys.default;
-const publicKey=typeof variable==='string' ? Deno.env.get(variable) : undefined;
-if(typeof publicKey!=='string') throw new Error('Staging public publishable key unavailable');
+const publicKey="sb_publishable_ZoYvYGbu9rJlPhHjM-3t3g_MqFWGkL2"; // Staging PUBLIC API key. Never a secret.
 Deno.serve(createR150Handler({publishableKey:publicKey}));
