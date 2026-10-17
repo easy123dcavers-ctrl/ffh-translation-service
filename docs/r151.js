@@ -7,7 +7,7 @@
  if(!button||!replay||!output)return;
  const nonce='R151_'+Array.from(crypto.getRandomValues(new Uint8Array(20)),
    x=>x.toString(16).padStart(2,'0')).join('');
- let submitted=false;
+ let submitted=false;let confirmed=false;
  async function run(isReplay){
   if(!token){output.textContent='Please sign in with a fresh email link.';return}
   if(isReplay&&!submitted){output.textContent='Try the one-time staging translation first.';return}
@@ -25,7 +25,7 @@
       result.human_approved===false&&result.production_writes===0&&
       result.model_connected===true&&result.target==='es'&&
       typeof result.draft==='string'&&result.draft.length<800){
-    submitted=true;
+    submitted=true;confirmed=true;
     output.textContent='PASS: one real Spanish machine draft (UNREVIEWED):\n'+
        result.draft+'\nNothing was approved, saved to FFH content, or published. Now check duplicate refusal.';
    }else if(result.status==='duplicate'&&response.status===409){
@@ -42,7 +42,7 @@
   }catch(e){
    submitted=true;output.textContent='Network or staging model test unavailable. The request may have been admitted; do not retry it. '+String(e?.message||'');
   }finally{
-   button.disabled=true;replay.disabled=!token||!submitted;
+   button.disabled=true;replay.disabled=!token||!confirmed;
   }
  }
  button.addEventListener('click',()=>run(false));
