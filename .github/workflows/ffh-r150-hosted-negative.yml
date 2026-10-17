@@ -1,0 +1,39 @@
+name: FFH R150 real hosted staging auth-only negative HTTPS
+on:
+  push:
+    branches: [ffh-r150-zero-new-render-edge-broker-prep-20261017]
+    paths: [.github/workflows/ffh-r150-hosted-negative.yml]
+permissions:
+  contents: read
+jobs:
+  no-member-token-negative-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Confirm staging branch and no destructive action
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r150-zero-new-render-edge-broker-prep-20261017
+          python -m py_compile r150/test_hosted_negative.py
+      - name: Exercise real staged Edge HTTPS (no tokens or model)
+        run: |
+          set -euo pipefail
+          python -m unittest -v r150.test_hosted_negative 2>&1 | tee r150-hosted-negative.log
+          grep -E 'Ran 8 tests' r150-hosted-negative.log
+          grep -E '^OK$' r150-hosted-negative.log
+          echo 'R150_REAL_STAGE_HTTPS_8_NEGATIVE_PASS_NO_MODEL'
+      - name: Preserve tested source and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r150-staging-live-negative-evidence
+          path: |
+            r150/test_hosted_negative.py
+            r150-hosted-negative.log
+            r150/edge/
+          retention-days: 7
+          if-no-files-found: warn
