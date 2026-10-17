@@ -38,7 +38,7 @@ DECLARE
   s_text text;
   sid uuid;
   acct boolean; sess boolean; profile boolean; terms boolean; role_name text;
-  key bytea; user_hash text; receipt_hash text; inserted text;
+  key bytea; v_user_hash text; v_receipt_hash text; inserted text;
   slot bigint; used int;
 BEGIN
   u:=auth.uid();
@@ -62,14 +62,14 @@ BEGIN
   SELECT hmac_key INTO key FROM ffh_r146_sandbox.r151_secret WHERE slot='r151-v1';
   IF pg_catalog.octet_length(key) IS DISTINCT FROM 32
   THEN RAISE EXCEPTION 'missing R151 staging HMAC key'; END IF;
-  user_hash:=pg_catalog.encode(extensions.hmac(
+  v_user_hash:=pg_catalog.encode(extensions.hmac(
       pg_catalog.convert_to('R151-USER/'||u::text,'UTF8'),key,'sha256'),'hex');
-  receipt_hash:=pg_catalog.encode(extensions.hmac(
-      pg_catalog.convert_to('R151-RECEIPT/'||user_hash||'/'||p_nonce,'UTF8'),key,'sha256'),'hex');
+  v_receipt_hash:=pg_catalog.encode(extensions.hmac(
+      pg_catalog.convert_to('R151-RECEIPT/'||v_user_hash||'/'||p_nonce,'UTF8'),key,'sha256'),'hex');
   slot:=pg_catalog.floor(pg_catalog.date_part('epoch',pg_catalog.clock_timestamp())/60)::bigint;
   BEGIN
     INSERT INTO ffh_r146_sandbox.r151_receipts(receipt_hash,user_hash,status)
-      VALUES(receipt_hash,user_hash,'inflight')
+      VALUES(v_receipt_hash,v_user_hash,'inflight')
       ON CONFLICT(receipt_hash) DO NOTHING RETURNING receipt_hash INTO inserted;
     IF inserted IS NULL THEN RETURN pg_catalog.jsonb_build_object('status','duplicate'); END IF;
     INSERT INTO ffh_r146_sandbox.r151_quotas(user_hash,minute_bucket,used_count)
@@ -95,17 +95,17 @@ RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path=''
 AS $body$
 DECLARE
  acct boolean; sess boolean; profile boolean; terms boolean; role_name text;
- key bytea; user_hash text; receipt_hash text; new_state text; changed text;
+ key bytea; v_user_hash text; v_receipt_hash text; new_state text; changed text;
 BEGIN
   IF p_nonce IS NULL OR p_nonce !~ '^[A-Za-z0-9_-]{16,96}$'
   THEN RETURN pg_catalog.jsonb_build_object('status','held'); END IF;
   SELECT hmac_key INTO key FROM ffh_r146_sandbox.r151_secret WHERE slot='r151-v1';
   IF pg_catalog.octet_length(key) IS DISTINCT FROM 32
   THEN RAISE EXCEPTION 'missing staging HMAC key'; END IF;
-  user_hash:=pg_catalog.encode(extensions.hmac(
+  v_user_hash:=pg_catalog.encode(extensions.hmac(
       pg_catalog.convert_to('R151-USER/'||p_user::text,'UTF8'),key,'sha256'),'hex');
-  receipt_hash:=pg_catalog.encode(extensions.hmac(
-      pg_catalog.convert_to('R151-RECEIPT/'||user_hash||'/'||p_nonce,'UTF8'),key,'sha256'),'hex');
+  v_receipt_hash:=pg_catalog.encode(extensions.hmac(
+      pg_catalog.convert_to('R151-RECEIPT/'||v_user_hash||'/'||p_nonce,'UTF8'),key,'sha256'),'hex');
   SELECT account_ok,current_session_ok,has_member_profile,terms_ok,effective_role
     INTO acct,sess,profile,terms,role_name
   FROM ffh_r146_sandbox.member_status(p_user,p_session);
@@ -114,8 +114,8 @@ BEGIN
         AND role_name IN('member','moderator','admin','owner')
         AND ffh_r146_sandbox.safe_source('FFH R146 interface label for staging verification.') IS TRUE
     THEN 'done' ELSE 'held' END;
-  UPDATE ffh_r146_sandbox.r151_receipts SET status=new_state,finished_at=now()
-    WHERE receipt_hash=receipt_hash AND user_hash=user_hash AND status='inflight'
+  UPDATE ffh_r146_sandbox.r151_receipts AS r SET status=new_state,finished_at=now()
+    WHERE r.receipt_hash=v_receipt_hash AND r.user_hash=v_user_hash AND r.status='inflight'
     RETURNING status INTO changed;
   -- If missing/unknown already-finished receipt: never retry or reveal a draft.
   IF changed IS NULL THEN RETURN pg_catalog.jsonb_build_object('status','not_finalized'); END IF;
