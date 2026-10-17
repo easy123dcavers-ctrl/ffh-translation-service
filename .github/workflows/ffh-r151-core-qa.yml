@@ -1,0 +1,47 @@
+name: FFH R151 fixed-source staging broker security
+on:
+  push:
+    branches: [ffh-r151-hosted-synthetic-model-gate-20261017]
+    paths: [.github/workflows/ffh-r151-core-qa.yml]
+permissions:
+  contents: read
+jobs:
+  boundary-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Isolated branch and exact script syntax
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r151-hosted-synthetic-model-gate-20261017
+          node --check r151/edge/core.mjs
+          node --check r151/test_core.mjs
+      - name: Sixteen isolated Auth/model/receipt/host validation tests
+        run: |
+          set -euo pipefail
+          node --test r151/test_core.mjs 2>&1 | tee r151-tests.log
+          grep -F '# pass 16' r151-tests.log
+          grep -F '# fail 0' r151-tests.log
+          echo FFH_R151_STATIC_INTEGRATION_16_GATES_PASS
+      - name: Fail if stage source asks to publish or accepts raw member text
+        run: |
+          set -euo pipefail
+          grep -F "export const TEXT='FFH R146 interface label for staging verification.'" r151/edge/core.mjs
+          grep -F "export const RENDER='https://ffh-translation-service.onrender.com/translate'" r151/edge/core.mjs
+          if grep -E 'ffh_admin_bulk|update_translation|FFH_PRODUCTION|sb_secret_|service_role.*=' r151/edge/core.mjs; then
+            echo "FAIL unexpected sensitive content"; exit 1
+          fi
+      - name: Preserve evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r151-isolated-staging-bridge-evidence
+          path: |
+            r151-tests.log
+            r151/
+          retention-days: 7
+          if-no-files-found: warn
