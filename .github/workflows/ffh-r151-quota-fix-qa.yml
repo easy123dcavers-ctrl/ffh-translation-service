@@ -1,0 +1,38 @@
+name: FFH R151 verified quota variable repair and live anonymous denial
+on:
+  push:
+    branches: [ffh-r151-hosted-synthetic-model-gate-20261017]
+    paths: [.github/workflows/ffh-r151-quota-fix-qa.yml]
+permissions:
+  contents: read
+jobs:
+  protected-staging-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: R151 static migration fix plus real hosted negative HTTP
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = ffh-r151-hosted-synthetic-model-gate-20261017
+          python -m unittest -v r151.test_sql_quota_fix r151.test_live_negative 2>&1 | tee r151-quota-fix-qa.log
+          grep -E 'Ran 13 tests' r151-quota-fix-qa.log
+          grep -E '^OK$' r151-quota-fix-qa.log
+          echo R151_FIXED_QUOTA_13_STATIC_AND_REAL_NEGATIVE_AUTH_TESTS_PASSED_STAGING_ONLY
+      - name: Preserve QA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r151-guarded-quota-fix-qa
+          path: |
+            r151-quota-fix-qa.log
+            r151/test_sql_quota_fix.py
+            r151/02_fixed_quota_variable_staging_only.sql
+          retention-days: 7
+          if-no-files-found: warn
