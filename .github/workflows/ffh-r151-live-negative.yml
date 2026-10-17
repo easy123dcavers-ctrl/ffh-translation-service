@@ -1,0 +1,45 @@
+name: FFH R151 live denied JWT plus Android draft UI
+on:
+  push:
+    branches: [ffh-r151-hosted-synthetic-model-gate-20261017]
+    paths: [.github/workflows/ffh-r151-live-negative.yml]
+permissions:
+  contents: read
+jobs:
+  hosted-negative:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: All 16 mocked model bridge tests
+        run: |
+          set -euo pipefail
+          node --test r151/test_core.mjs 2>&1 | tee r151-core.log
+          grep -F '# pass 16' r151-core.log
+          grep -F '# fail 0' r151-core.log
+      - name: 8 real HTTPS unsigned and wrong-origin negative/staging UI checks
+        run: |
+          set -euo pipefail
+          python -m unittest -v r151.test_live_negative 2>&1 | tee r151-hosted.log
+          grep -E 'Ran 8 tests' r151-hosted.log
+          grep -E '^OK$' r151-hosted.log
+          echo FFH_R151_STAGING_24_NEGATIVE_AND_STATIC_GATES_PASS
+      - name: Preserve exact tested files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffh-r151-negative-hosted-verified
+          path: |
+            r151-core.log
+            r151-hosted.log
+            r151/
+            docs/index.html
+            docs/r151.js
+          retention-days: 7
+          if-no-files-found: warn
